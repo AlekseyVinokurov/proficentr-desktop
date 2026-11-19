@@ -25,6 +25,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
           [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
+          test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG" || { echo "Запустите workflow с --ref выбранного релизного тега"; exit 1; }
           test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$(git rev-parse origin/main)"
           echo "sha=$(git rev-parse "$RELEASE_TAG^{commit}")" >> "$GITHUB_OUTPUT"
           test -f LICENSE || { echo 'Лицензия должна быть утверждена до публичного релиза'; exit 1; }
@@ -69,4 +70,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
-        run: gh release create "$env:RELEASE_TAG" dist/Proficentr-*-Windows.zip dist/manifest.json dist/manifest.sig --verify-tag --title "Proficentr Desktop $env:RELEASE_TAG" --notes-file CHANGELOG.md
+        run: |
+          $package = (Get-ChildItem 'dist/Proficentr-*-Windows.zip').FullName
+          gh release create "$env:RELEASE_TAG" "$package" dist/manifest.json dist/manifest.sig --verify-tag --title "Proficentr Desktop $env:RELEASE_TAG" --notes-file CHANGELOG.md
