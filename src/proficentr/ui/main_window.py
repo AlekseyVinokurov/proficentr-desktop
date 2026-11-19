@@ -11,6 +11,8 @@ from proficentr.storage import Storage
 from proficentr.ui.settings_page import SettingsPage
 from proficentr.student_repository import StudentRepository
 from proficentr.ui.students_page import StudentsPage
+from proficentr.counterparty_repository import CounterpartyRepository
+from proficentr.ui.counterparties_page import CounterpartiesPage
 
 
 SECTIONS = (
@@ -36,6 +38,10 @@ class MainWindow(QMainWindow):
             if section == "Слушатели":
                 self.students_page = StudentsPage(StudentRepository(database.connection) if database else None)
                 self.pages.addWidget(self.students_page)
+                continue
+            if section == "Организации":
+                self.counterparties_page = CounterpartiesPage(CounterpartyRepository(database.connection) if database else None)
+                self.pages.addWidget(self.counterparties_page)
                 continue
             if section == "Настройки":
                 root = database_path.parent.parent if database_path.parent.name == "database" else database_path.parent

@@ -11,8 +11,10 @@ import time
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from proficentr import settings, updates
-from proficentr.database import Database
+from proficentr.database import Database, MIGRATIONS
 from proficentr.storage import Storage
+from proficentr.counterparties import Counterparty
+from proficentr.counterparty_repository import CounterpartyRepository
 
 
 def wait_file(path, process, seconds=120):
@@ -38,6 +40,8 @@ def main():
             db.connection.execute("INSERT INTO training_center(id,full_name) VALUES (1,'Synthetic CI center')")
             db.connection.execute("INSERT INTO students(surname,first_name,birth_date) VALUES ('Synthetic','Student','1990-01-01')")
             db.connection.commit()
+        with Database(storage.database_path) as db:
+            counterparty = CounterpartyRepository(db.connection).save(Counterparty(full_name='Synthetic CI customer'))
         settings.save_directory(storage.root)
         (storage.root/'attachments'/'synthetic.txt').write_text('preserve me')
         config_before=settings.config_file().read_bytes()
@@ -52,7 +56,7 @@ def main():
         name=f'Proficentr-{target}-Windows.zip'
         raw=json.dumps(dict(format=1,version=target,filename=name,size=archive.stat().st_size,
                             sha256=hashlib.sha256(archive.read_bytes()).hexdigest(),platform='windows-x86_64',
-                            min_updater=1,schema=3)).encode()
+                            min_updater=1,schema=len(MIGRATIONS))).encode()
         assets={n:updates.OFFICIAL_URL+f'/releases/download/v{target}/{n}' for n in ['manifest.json','manifest.sig',name]}
         def fixture_download(url,destination,limit):
             assert url in assets.values()
@@ -80,12 +84,13 @@ def main():
             with Database(storage.database_path) as db:
                 assert db.connection.execute('SELECT full_name FROM training_center').fetchone()==('Synthetic CI center',)
                 assert db.connection.execute('SELECT surname FROM students').fetchall()==[('Synthetic',)]
+                assert CounterpartyRepository(db.connection).load(counterparty.id) == counterparty
         finally:
             if new_pid:subprocess.run(['taskkill','/PID',str(new_pid),'/T','/F'],check=False,capture_output=True)
             if helper_process.poll() is None:helper_process.kill();helper_process.wait()
         # Actual frozen probe rejects newer schema, leaving the installed files in place.
         with Database(storage.database_path) as db:
-            db.connection.execute('INSERT INTO schema_migrations(version) VALUES (4)');db.connection.commit()
+            db.connection.execute('INSERT INTO schema_migrations(version) VALUES (?)', (len(MIGRATIONS)+1,));db.connection.commit()
         result=subprocess.run([str(install/'Proficentr.exe'),'--update-probe',str(storage.database_path)],timeout=30)
         assert result.returncode!=0
         assert (install/'Proficentr.exe').is_file()

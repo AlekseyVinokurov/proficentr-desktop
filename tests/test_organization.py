@@ -47,7 +47,7 @@ def test_upgrade_p01_database(tmp_path, monkeypatch):
         with Database(path) as db:
             assert db.connection.execute("SELECT value FROM legacy_probe").fetchone() == ("fictional",)
             assert db.connection.execute("SELECT count(*) FROM training_center").fetchone() == (0,)
-            assert db.connection.execute("SELECT version FROM schema_migrations").fetchall() == [(1,), (2,), (3,)]
+            assert db.connection.execute("SELECT version FROM schema_migrations").fetchall() == [(v,) for v in range(1, len(database_module.MIGRATIONS) + 1)]
 
 
 def test_logo_upload_replace_relocate_and_remove(tmp_path):

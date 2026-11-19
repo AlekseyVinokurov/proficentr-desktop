@@ -43,6 +43,23 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
     )""",
      "CREATE INDEX students_snils_idx ON students(snils)",
      "CREATE INDEX students_birth_date_idx ON students(birth_date)"),
+    ("""CREATE TABLE counterparties (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN ('legal_entity', 'sole_proprietor')),
+        full_name TEXT NOT NULL CHECK (length(trim(full_name)) > 0),
+        short_name TEXT NOT NULL DEFAULT '', inn TEXT NOT NULL DEFAULT '',
+        kpp TEXT NOT NULL DEFAULT '' CHECK (kind != 'sole_proprietor' OR kpp = ''),
+        ogrn TEXT NOT NULL DEFAULT '', legal_address TEXT NOT NULL DEFAULT '',
+        actual_address TEXT NOT NULL DEFAULT '', postal_address TEXT NOT NULL DEFAULT '',
+        phone TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', website TEXT NOT NULL DEFAULT '',
+        contact_name TEXT NOT NULL DEFAULT '', contact_position TEXT NOT NULL DEFAULT '',
+        bank_name TEXT NOT NULL DEFAULT '', bik TEXT NOT NULL DEFAULT '',
+        settlement_account TEXT NOT NULL DEFAULT '', correspondent_account TEXT NOT NULL DEFAULT '',
+        representative_name TEXT NOT NULL DEFAULT '', representative_position TEXT NOT NULL DEFAULT '',
+        authority_basis TEXT NOT NULL DEFAULT '', power_of_attorney TEXT NOT NULL DEFAULT '',
+        note TEXT NOT NULL DEFAULT ''
+    )""",
+     "CREATE INDEX counterparties_inn_idx ON counterparties(inn)"),
 )
 
 

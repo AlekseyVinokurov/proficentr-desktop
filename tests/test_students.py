@@ -137,7 +137,7 @@ def test_upgrade_p021_preserves_center(tmp_path, monkeypatch):
         with Database(path) as db:
             assert db.connection.execute("SELECT short_name FROM training_center").fetchone() == ("Synthetic",)
             assert StudentRepository(db.connection).search() == []
-            assert db.connection.execute("SELECT version FROM schema_migrations").fetchall() == [(1,), (2,), (3,)]
+            assert db.connection.execute("SELECT version FROM schema_migrations").fetchall() == [(v,) for v in range(1, len(module.MIGRATIONS) + 1)]
 
 
 def test_transaction_failure_and_no_personal_data_in_diagnostics(tmp_path, caplog, capsys):
