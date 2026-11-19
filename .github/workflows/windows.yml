@@ -1,0 +1,55 @@
+name: Windows — тесты и сборка
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Установка зависимостей
+        run: python -m pip install ".[test,build]"
+      - name: Тесты
+        run: python -m pytest -q
+      - name: Сборка onedir
+        run: python -m PyInstaller --noconfirm --clean --onedir --windowed --name Proficentr --paths src run_proficentr.py
+      - name: Проверка EXE и запуска собранного приложения
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD 'dist/Proficentr/Proficentr.exe'
+          if (!(Test-Path $exe)) { throw 'Proficentr.exe не найден' }
+          $env:PROFICENTR_DATA_DIR = Join-Path $env:RUNNER_TEMP 'proficentr-smoke'
+          for ($i = 0; $i -lt 2; $i++) {
+            $process = Start-Process $exe -ArgumentList '--smoke-test' -PassThru
+            if (!$process.WaitForExit(30000)) {
+              $process.Kill()
+              throw 'Превышено время запуска EXE'
+            }
+            if ($process.ExitCode -ne 0) { throw "Ошибка EXE: $($process.ExitCode)" }
+          }
+          if (!(Test-Path (Join-Path $env:PROFICENTR_DATA_DIR 'proficentr.sqlite3'))) {
+            throw 'SQLite не создана'
+          }
+      - name: Упаковка всей папки приложения
+        shell: pwsh
+        run: Compress-Archive -Path dist/Proficentr -DestinationPath dist/Proficentr-Desktop-Windows.zip
+      - name: Загрузка ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Proficentr-Desktop-Windows
+          path: dist/Proficentr-Desktop-Windows.zip
+          if-no-files-found: error
+          retention-days: 14
