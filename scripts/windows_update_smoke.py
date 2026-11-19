@@ -15,6 +15,8 @@ from proficentr.database import Database, MIGRATIONS
 from proficentr.storage import Storage
 from proficentr.counterparties import Counterparty
 from proficentr.counterparty_repository import CounterpartyRepository
+from proficentr.programs import Program
+from proficentr.program_repository import ProgramRepository
 
 
 def wait_file(path, process, seconds=120):
@@ -42,6 +44,10 @@ def main():
             db.connection.commit()
         with Database(storage.database_path) as db:
             counterparty = CounterpartyRepository(db.connection).save(Counterparty(full_name='Synthetic CI customer'))
+        with Database(storage.database_path) as db:
+            programs = ProgramRepository(db.connection)
+            active_program = programs.save(Program(full_name='Synthetic DPO program', direction='dpo', kind='dpo_upskilling', hours=72))
+            archived_program = programs.save(Program(full_name='Synthetic PO program', direction='po', kind='po_retraining', hours=144, active=False, edition='old'))
         settings.save_directory(storage.root)
         (storage.root/'attachments'/'synthetic.txt').write_text('preserve me')
         config_before=settings.config_file().read_bytes()
@@ -85,6 +91,8 @@ def main():
                 assert db.connection.execute('SELECT full_name FROM training_center').fetchone()==('Synthetic CI center',)
                 assert db.connection.execute('SELECT surname FROM students').fetchall()==[('Synthetic',)]
                 assert CounterpartyRepository(db.connection).load(counterparty.id) == counterparty
+                assert ProgramRepository(db.connection).search() == [active_program]
+                assert ProgramRepository(db.connection).load(archived_program.id) == archived_program
         finally:
             if new_pid:subprocess.run(['taskkill','/PID',str(new_pid),'/T','/F'],check=False,capture_output=True)
             if helper_process.poll() is None:helper_process.kill();helper_process.wait()

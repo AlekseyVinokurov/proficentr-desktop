@@ -60,6 +60,20 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
         note TEXT NOT NULL DEFAULT ''
     )""",
      "CREATE INDEX counterparties_inn_idx ON counterparties(inn)"),
+    ("""CREATE TABLE programs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        full_name TEXT NOT NULL CHECK (length(trim(full_name)) > 0),
+        short_name TEXT NOT NULL DEFAULT '', code TEXT NOT NULL DEFAULT '',
+        direction TEXT NOT NULL, kind TEXT NOT NULL,
+        hours INTEGER NOT NULL CHECK (typeof(hours) = 'integer' AND hours > 0),
+        qualification TEXT NOT NULL DEFAULT '', grade TEXT NOT NULL DEFAULT '',
+        approval_date TEXT NOT NULL DEFAULT '', approval_number TEXT NOT NULL DEFAULT '',
+        approval_details TEXT NOT NULL DEFAULT '', edition TEXT NOT NULL DEFAULT '',
+        note TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+        CHECK ((direction = 'dpo' AND kind IN ('dpo_upskilling', 'dpo_retraining')) OR
+               (direction = 'po' AND kind IN ('po_initial_training', 'po_retraining', 'po_upskilling')))
+    )""",
+     "CREATE INDEX programs_active_direction_idx ON programs(active, direction)"),
 )
 
 

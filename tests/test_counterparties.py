@@ -160,7 +160,7 @@ def test_upgrade_from_schema_three_preserves_records_and_backup(tmp_path, monkey
             assert StudentRepository(db.connection).load(student.id) == student
             assert db.connection.execute('SELECT full_name FROM training_center').fetchone() == ('Пример центра',)
             assert db.connection.execute('SELECT * FROM schema_migrations WHERE version<=3').fetchall() == old_stamps
-            assert db.connection.execute('SELECT max(version) FROM schema_migrations').fetchone() == (4,)
+            assert db.connection.execute('SELECT max(version) FROM schema_migrations').fetchone() == (len(module.MIGRATIONS),)
             if not CounterpartyRepository(db.connection).search():
                 saved = CounterpartyRepository(db.connection).save(sample())
             assert CounterpartyRepository(db.connection).load(saved.id) == saved
