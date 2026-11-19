@@ -7,6 +7,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QListWidget, QMainWindow, QStackedWidget,
     QVBoxLayout, QWidget,
 )
+from proficentr.storage import Storage
+from proficentr.ui.settings_page import SettingsPage
 
 
 SECTIONS = (
@@ -16,7 +18,7 @@ SECTIONS = (
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, database_path: Path):
+    def __init__(self, database_path: Path, storage: Storage | None = None, database=None):
         super().__init__()
         self.setWindowTitle("Proficentr Desktop")
         self.resize(1080, 700)
@@ -29,6 +31,11 @@ class MainWindow(QMainWindow):
         self.navigation.setFixedWidth(190)
         self.pages = QStackedWidget()
         for section in SECTIONS:
+            if section == "Настройки":
+                root = database_path.parent.parent if database_path.parent.name == "database" else database_path.parent
+                self.settings_page = SettingsPage(database_path, storage or Storage(root), database)
+                self.pages.addWidget(self.settings_page)
+                continue
             page = QWidget()
             content = QVBoxLayout(page)
             content.setContentsMargins(24, 20, 24, 20)
@@ -40,8 +47,6 @@ class MainWindow(QMainWindow):
             content.addWidget(title)
             if section == "Главная":
                 description = "Добро пожаловать в Proficentr Desktop.\nВыберите раздел в меню слева."
-            elif section == "Настройки":
-                description = f"База данных: {database_path}\nВерсия приложения: 0.1.0"
             else:
                 description = "Раздел подготовлен. Функции будут добавлены на следующих этапах."
             label = QLabel(description)

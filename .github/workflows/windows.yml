@@ -40,7 +40,7 @@ jobs:
             }
             if ($process.ExitCode -ne 0) { throw "Ошибка EXE: $($process.ExitCode)" }
           }
-          if (!(Test-Path (Join-Path $env:PROFICENTR_DATA_DIR 'proficentr.sqlite3'))) {
+          if (!(Test-Path (Join-Path $env:PROFICENTR_DATA_DIR 'database/proficentr.sqlite3'))) {
             throw 'SQLite не создана'
           }
       - name: Упаковка всей папки приложения

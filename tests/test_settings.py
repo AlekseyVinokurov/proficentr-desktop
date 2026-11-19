@@ -9,7 +9,7 @@ from proficentr.services import open_database
 def test_override_and_persistence(tmp_path, monkeypatch):
     monkeypatch.setenv("PROFICENTR_DATA_DIR", str(tmp_path))
     with open_database() as database:
-        assert database.path == tmp_path / "proficentr.sqlite3"
+        assert database.path == tmp_path / "database" / "proficentr.sqlite3"
         stamp = database.connection.execute("SELECT applied_at FROM schema_migrations").fetchone()
     with open_database() as database:
         assert database.connection.execute("SELECT applied_at FROM schema_migrations").fetchone() == stamp

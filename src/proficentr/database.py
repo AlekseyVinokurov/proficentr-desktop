@@ -16,11 +16,13 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
 
 
 class Database:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, create: bool = True):
         self.path = path.resolve()
         _require_local(self.path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.connection = sqlite3.connect(self.path, timeout=10)
+        self.connection = sqlite3.connect(
+            f"{self.path.as_uri()}?mode={'rwc' if create else 'rw'}", uri=True, timeout=10
+        )
         try:
             self.connection.execute("PRAGMA foreign_keys = ON")
             self._migrate()
