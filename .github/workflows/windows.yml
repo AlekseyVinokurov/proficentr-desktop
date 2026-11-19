@@ -42,16 +42,23 @@ jobs:
       - name: Проверка известных уязвимостей зависимостей
         run: python -m pip_audit -r requirements-release.txt --disable-pip --no-deps
       - name: Поиск секретов в истории Git
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_ENABLE_COMMENTS: 'false'
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'false'
-          GITLEAKS_ENABLE_SUMMARY: 'true'
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'gitleaks.zip'
+          Invoke-WebRequest 'https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_windows_x64.zip' -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne 'd29144deff3a68aa93ced33dddf84b7fdc26070add4aa0f4513094c8332afc4e') { throw 'Gitleaks hash mismatch' }
+          $tool = Join-Path $env:RUNNER_TEMP 'gitleaks'
+          Expand-Archive $archive -DestinationPath $tool
+          & (Join-Path $tool 'gitleaks.exe') git --redact --no-banner --log-opts='--all' .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Тесты
         run: python -m pytest -q
       - name: Сборка onedir
         run: python -m PyInstaller --noconfirm --clean --onedir --windowed --name Proficentr --paths src run_proficentr.py
+      - name: Сборка отдельного небольшого helper без Qt
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name ProficentrUpdater --paths src run_updater.py
+          Copy-Item dist/ProficentrUpdater.exe dist/Proficentr/ProficentrUpdater.exe
       - name: Проверка EXE и запуска собранного приложения
         shell: pwsh
         run: |

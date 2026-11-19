@@ -146,7 +146,8 @@ def unpack(package: Path, manifest: dict, destination: Path) -> Path:
                     with archive.open(entry) as source, target.open("xb") as output:
                         shutil.copyfileobj(source, output)
         result = destination / "Proficentr"
-        if not (result / "Proficentr.exe").is_file() or not (result / "_internal").is_dir():
+        if (not (result / "Proficentr.exe").is_file() or not (result / "_internal").is_dir()
+                or not (result / "ProficentrUpdater.exe").is_file()):
             raise ValueError("Неполная onedir-сборка.")
         return result
     except Exception:

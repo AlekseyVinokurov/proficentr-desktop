@@ -97,12 +97,12 @@ def start_helper(staged: Path, database: Path, storage: Path) -> None:
         raise ValueError("Неверный каталог подготовки обновления.")
     # Fail before shutting down if the directory is not user-writable. No elevation.
     work = staged.parent.parent
-    helper = work / "helper"
-    shutil.copytree(install, helper)
+    helper = work / "ProficentrUpdater.exe"
+    shutil.copyfile(install / "ProficentrUpdater.exe", helper)
     plan = {"pid": os.getpid(), "install": str(install), "staged": str(staged), "database": str(database)}
     path = work / "plan.json"
     path.write_text(json.dumps(plan), encoding="utf-8")
-    subprocess.Popen([str(helper / "Proficentr.exe"), "--apply-update", str(path)], cwd=work,  # nosec B603 # copied current executable.
+    subprocess.Popen([str(helper), str(path)], cwd=work,  # nosec B603 # copied current executable.
                      creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
 
 

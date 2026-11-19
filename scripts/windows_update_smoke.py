@@ -19,6 +19,8 @@ def wait_file(path, process, seconds=120):
     deadline=time.monotonic()+seconds
     while time.monotonic()<deadline:
         if path.exists():return
+        if (path.parent/'result.txt').exists():
+            raise RuntimeError((path.parent/'result.txt').read_text(encoding='utf-8'))
         if process.poll() is not None:raise RuntimeError('Helper exited before confirmation')
         time.sleep(.2)
     raise TimeoutError('Frozen update did not finish')
@@ -59,12 +61,12 @@ def main():
             else:shutil.copyfile(archive,destination)
         updates.download=fixture_download
         staged=updates.prepare_release(dict(version=target,assets=assets),work)
-        helper=work/'helper';shutil.copytree(install,helper)
+        helper=work/'ProficentrUpdater.exe';shutil.copyfile(install/'ProficentrUpdater.exe',helper)
         # Real frozen old app launches against populated storage; helper waits for its exit.
         old=subprocess.Popen([str(install/'Proficentr.exe'),'--smoke-test'])
         plan=dict(pid=old.pid,install=str(install),staged=str(staged),database=str(storage.database_path))
         plan_path=work/'plan.json';plan_path.write_text(json.dumps(plan))
-        helper_process=subprocess.Popen([str(helper/'Proficentr.exe'),'--apply-update',str(plan_path)])
+        helper_process=subprocess.Popen([str(helper),str(plan_path)])
         new_pid=None
         try:
             assert old.wait(timeout=30)==0

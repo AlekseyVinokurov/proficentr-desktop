@@ -25,7 +25,7 @@ def signed(monkeypatch):
 def package(tmp_path, names=None):
     path = tmp_path / 'package.zip'
     with zipfile.ZipFile(path, 'w') as z:
-        for name in (names or ['Proficentr/Proficentr.exe', 'Proficentr/_internal/runtime']):
+        for name in (names or ['Proficentr/Proficentr.exe', 'Proficentr/_internal/runtime', 'Proficentr/ProficentrUpdater.exe']):
             z.writestr(name, b'synthetic')
     return path
 
