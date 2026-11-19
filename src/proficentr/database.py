@@ -26,6 +26,21 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
         license_date TEXT NOT NULL DEFAULT '', license_authority TEXT NOT NULL DEFAULT '',
         logo_path TEXT NOT NULL DEFAULT ''
     )""",),
+    ("""CREATE TABLE students (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        surname TEXT NOT NULL, first_name TEXT NOT NULL,
+        patronymic TEXT NOT NULL DEFAULT '', birth_date TEXT NOT NULL,
+        snils TEXT NOT NULL DEFAULT '', citizenship TEXT NOT NULL DEFAULT '',
+        phone TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '',
+        registration_address TEXT NOT NULL DEFAULT '', residential_address TEXT NOT NULL DEFAULT '',
+        passport_series TEXT NOT NULL DEFAULT '', passport_number TEXT NOT NULL DEFAULT '',
+        passport_issued_by TEXT NOT NULL DEFAULT '', passport_issue_date TEXT NOT NULL DEFAULT '',
+        passport_department_code TEXT NOT NULL DEFAULT '', education_level TEXT NOT NULL DEFAULT '',
+        education_document TEXT NOT NULL DEFAULT '', education_details TEXT NOT NULL DEFAULT '',
+        workplace TEXT NOT NULL DEFAULT '', job_title TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT ''
+    )""",
+     "CREATE INDEX students_snils_idx ON students(snils)",
+     "CREATE INDEX students_birth_date_idx ON students(birth_date)"),
 )
 
 
