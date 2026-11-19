@@ -1,6 +1,8 @@
 """SQLite и последовательные транзакционные миграции."""
 
+from contextlib import closing
 from pathlib import Path
+import uuid
 import sqlite3
 
 from proficentr.settings import _require_local
@@ -73,14 +75,38 @@ class Database:
                 raise RuntimeError("Нарушена последовательность миграций базы.")
             if len(versions) > len(MIGRATIONS):
                 raise RuntimeError("База создана более новой версией приложения.")
-            for version, statements in enumerate(MIGRATIONS, start=1):
-                if version <= len(versions):
-                    continue
-                for statement in statements:
-                    self.connection.execute(statement)
-                self.connection.execute(
-                    "INSERT INTO schema_migrations(version) VALUES (?)", (version,)
-                )
+            if versions and len(versions) < len(MIGRATIONS):
+                # Reserved write lock blocks concurrent writers. Read via a separate
+                # connection: backing up the connection holding a write lock would hang.
+                from proficentr.storage import backup_database
+
+                folder = self.path.parent / "migration-backups"
+                folder.mkdir(exist_ok=True)
+                backup = folder / (uuid.uuid4().hex + ".sqlite3")
+                trial = folder / (uuid.uuid4().hex + ".trial.sqlite3")
+                with closing(sqlite3.connect(f"{self.path.as_uri()}?mode=ro", uri=True)) as source:
+                    backup_database(source, backup)
+                try:
+                    with closing(sqlite3.connect(backup)) as source:
+                        backup_database(source, trial)
+                    with closing(sqlite3.connect(trial)) as copy:
+                        copy.execute("PRAGMA foreign_keys = ON")
+                        with copy:
+                            self._apply(copy, len(versions))
+                        if copy.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
+                            raise RuntimeError("Проверка пробной миграции не пройдена.")
+                finally:
+                    trial.unlink(missing_ok=True)
+            self._apply(self.connection, len(versions))
+
+    @staticmethod
+    def _apply(connection, applied):
+        for version, statements in enumerate(MIGRATIONS, start=1):
+            if version <= applied:
+                continue
+            for statement in statements:
+                connection.execute(statement)
+            connection.execute("INSERT INTO schema_migrations(version) VALUES (?)", (version,))
 
     def close(self) -> None:
         self.connection.close()

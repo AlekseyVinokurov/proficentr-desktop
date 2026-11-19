@@ -1,0 +1,8 @@
+# Protect via main ruleset: require review for changes to trust/network/release policy.
+/src/proficentr/updates.py @AlekseyVinokurov
+/src/proficentr/updater.py @AlekseyVinokurov
+/src/proficentr/instance.py @AlekseyVinokurov
+/security-policy.json @AlekseyVinokurov
+/scripts/ @AlekseyVinokurov
+/.github/ @AlekseyVinokurov
+/requirements-release.txt @AlekseyVinokurov

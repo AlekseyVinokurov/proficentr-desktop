@@ -11,6 +11,7 @@ from PySide6.QtCore import Qt, QSignalBlocker
 from proficentr.storage import relocate_storage
 from proficentr.organization import TrainingCenterRepository
 from proficentr.ui.training_center_page import TrainingCenterPage
+from proficentr.ui.about_page import AboutPage
 
 
 class SettingsPage(QWidget):
@@ -51,6 +52,8 @@ class SettingsPage(QWidget):
         repository = TrainingCenterRepository(database.connection, storage) if database else None
         self.center_page = TrainingCenterPage(repository)
         self.tabs.addTab(self.center_page, "Учебный центр")
+        self.about_page = AboutPage(storage)
+        self.tabs.addTab(self.about_page, "О программе")
         self._tab_index = 0
         self.tabs.currentChanged.connect(self._change_tab)
 

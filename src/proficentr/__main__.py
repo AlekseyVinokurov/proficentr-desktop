@@ -1,6 +1,9 @@
 """Запуск: python -m proficentr."""
 
 import argparse
+import json
+import os
+from contextlib import ExitStack
 import sys
 from pathlib import Path
 
@@ -14,10 +17,40 @@ from proficentr.ui.main_window import MainWindow, SECTIONS
 def main() -> int:
     parser = argparse.ArgumentParser(description="Proficentr Desktop")
     parser.add_argument("--smoke-test", action="store_true", help="Проверка запуска и навигации с выходом")
+    parser.add_argument("--apply-update", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--update-probe", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--update-ready", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.apply_update:
+        from proficentr.updater import apply
+        return apply(args.apply_update)
+    if args.update_probe:
+        from contextlib import closing
+        import sqlite3
+        import tempfile
+        from proficentr.database import Database
+        from proficentr.storage import backup_database
+        try:
+            with tempfile.TemporaryDirectory() as folder:
+                copy = Path(folder) / "probe.sqlite3"
+                with closing(sqlite3.connect(f"{args.update_probe.resolve().as_uri()}?mode=ro", uri=True)) as source:
+                    backup_database(source, copy)
+                with Database(copy, create=False):
+                    pass
+            return 0
+        except Exception:
+            return 1
     app = QApplication([sys.argv[0]])
     app.setApplicationName("Proficentr Desktop")
+    locks = ExitStack()
     try:
+        from proficentr.instance import exclusive
+        if not args.update_ready:
+            # Only briefly test the update lock; the app lock lives until shutdown.
+            with exclusive("update"):
+                locks.enter_context(exclusive("app"))
+        else:
+            locks.enter_context(exclusive("app"))
         storage = prepare_storage()
         if storage is None:
             if args.smoke_test:
@@ -29,6 +62,11 @@ def main() -> int:
         with open_database(storage) as database:
             window = MainWindow(database.path, storage, database)
             window.show()
+            if args.update_ready:
+                # This acknowledgement follows migrations and construction of all pages.
+                QTimer.singleShot(0, lambda: args.update_ready.write_text(json.dumps({"pid": os.getpid()}), encoding="ascii"))
+            if not args.smoke_test:
+                window.settings_page.about_page.schedule_check()
             if args.smoke_test:
                 for index in range(len(SECTIONS)):
                     window.navigation.setCurrentRow(index)
@@ -42,6 +80,8 @@ def main() -> int:
             return 1
         QMessageBox.critical(None, "Ошибка запуска", f"Не удалось запустить приложение.\n{error}")
         return 1
+    finally:
+        locks.close()
 
 
 if __name__ == "__main__":

@@ -101,7 +101,7 @@ class TrainingCenterRepository:
     def load(self) -> TrainingCenter:
         fields = tuple(asdict(TrainingCenter()))
         row = self.connection.execute(
-            f"SELECT {', '.join(fields)} FROM training_center WHERE id = 1"
+            f"SELECT {', '.join(fields)} FROM training_center WHERE id = 1"  # nosec B608 # field names are fixed constants; values are bound parameters.
         ).fetchone()
         return TrainingCenter(**dict(zip(fields, row))) if row else TrainingCenter()
 
@@ -144,7 +144,7 @@ class TrainingCenterRepository:
             fields = tuple(values)
             with self.connection:
                 self.connection.execute(
-                    f"INSERT INTO training_center (id, {', '.join(fields)}) "
+                    f"INSERT INTO training_center (id, {', '.join(fields)}) "  # nosec B608 # field names are fixed constants; values are bound parameters.
                     f"VALUES (1, {', '.join('?' for _ in fields)}) "
                     f"ON CONFLICT(id) DO UPDATE SET {', '.join(f'{field}=excluded.{field}' for field in fields)}",
                     tuple(values.values()),

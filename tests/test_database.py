@@ -57,3 +57,31 @@ def test_newer_schema_is_rejected(tmp_path):
             database.connection.execute("INSERT INTO schema_migrations(version) VALUES (4)")
     with pytest.raises(RuntimeError, match="новой"):
         Database(path)
+
+
+def test_migration_backup_wal_and_preserved_records(tmp_path, monkeypatch):
+    path = tmp_path / 'test.sqlite3'
+    with Database(path) as db:
+        db.connection.execute('PRAGMA journal_mode=WAL')
+        db.connection.execute("INSERT INTO training_center(id,full_name) VALUES (1,'Synthetic center')")
+        db.connection.commit()
+        monkeypatch.setattr(module, 'MIGRATIONS', module.MIGRATIONS + (("CREATE TABLE new_feature (id INTEGER)",),))
+        with Database(path) as upgraded:
+            assert upgraded.connection.execute('SELECT full_name FROM training_center').fetchone() == ('Synthetic center',)
+    backups=list((tmp_path/'migration-backups').glob('*.sqlite3'))
+    assert len(backups)==1
+    with sqlite3.connect(backups[0]) as copy:
+        assert copy.execute('PRAGMA integrity_check').fetchall()==[('ok',)]
+        assert copy.execute('SELECT max(version) FROM schema_migrations').fetchone()==(3,)
+        assert copy.execute('SELECT full_name FROM training_center').fetchone()==('Synthetic center',)
+
+
+def test_failed_trial_does_not_migrate_working_database(tmp_path,monkeypatch):
+    path=tmp_path/'test.sqlite3'
+    with Database(path):pass
+    before=path.read_bytes()
+    monkeypatch.setattr(module,'MIGRATIONS',module.MIGRATIONS+(("DROP TABLE training_center", "invalid SQL"),))
+    with pytest.raises(sqlite3.OperationalError):
+        Database(path)
+    assert path.read_bytes()==before
+    assert len(list((tmp_path/'migration-backups').glob('*.sqlite3')))==1

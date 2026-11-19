@@ -36,7 +36,7 @@ class StudentRepository:
     def _select(self, condition="1", parameters=()) -> list[Student]:
         try:
             rows = self.connection.execute(
-                f"SELECT {', '.join(FIELDS)} FROM students WHERE {condition} "
+                f"SELECT {', '.join(FIELDS)} FROM students WHERE {condition} "  # nosec B608 # field names are fixed constants; values are bound parameters.
                 "ORDER BY student_casefold(surname), student_casefold(first_name), id", parameters,
             ).fetchall()
             return [Student(**dict(zip(FIELDS, row))) for row in rows]
@@ -86,13 +86,13 @@ class StudentRepository:
                 parameters = tuple(values[field] for field in DATA_FIELDS)
                 if student.id is None:
                     cursor = self.connection.execute(
-                        f"INSERT INTO students ({', '.join(DATA_FIELDS)}) VALUES ({', '.join('?' for _ in DATA_FIELDS)})",
+                        f"INSERT INTO students ({', '.join(DATA_FIELDS)}) VALUES ({', '.join('?' for _ in DATA_FIELDS)})",  # nosec B608 # field names are fixed constants; values are bound parameters.
                         parameters,
                     )
                     student.id = cursor.lastrowid
                 else:
                     cursor = self.connection.execute(
-                        f"UPDATE students SET {', '.join(field + ' = ?' for field in DATA_FIELDS)} WHERE id = ?",
+                        f"UPDATE students SET {', '.join(field + ' = ?' for field in DATA_FIELDS)} WHERE id = ?",  # nosec B608 # field names are fixed constants; values are bound parameters.
                         (*parameters, student.id),
                     )
                     if cursor.rowcount != 1:
