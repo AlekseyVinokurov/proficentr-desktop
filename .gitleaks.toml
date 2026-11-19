@@ -1,0 +1,8 @@
+# Only the SHA-256 fingerprint of the public verification key is exempted.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Public Ed25519 key fingerprint; not a credential"
+regexTarget = "secret"
+regexes = ['''^20895e51be0c2f4515f36ebda6e4f637e5897ba9aeef37565f38d04be58ae193$''']

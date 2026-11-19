@@ -17,7 +17,7 @@ jobs:
     outputs:
       sha: ${{ steps.validate.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
       - id: validate
@@ -42,16 +42,16 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ needs.validate.outputs.sha }}
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
       - run: |
           python -m pip install -r requirements-release.txt
           python -m pip install --no-deps -e .
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: Proficentr-Desktop-Windows
           path: dist
@@ -60,7 +60,7 @@ jobs:
           RELEASE_ED25519_PRIVATE_KEY: ${{ secrets.RELEASE_ED25519_PRIVATE_KEY }}
           RELEASE_TAG: ${{ inputs.tag }}
         run: python scripts/sign_release.py "$env:RELEASE_TAG"
-      - uses: actions/attest-build-provenance@v3
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
           subject-path: |
             dist/Proficentr-*-Windows.zip

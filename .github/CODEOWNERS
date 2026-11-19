@@ -6,3 +6,5 @@
 /scripts/ @AlekseyVinokurov
 /.github/ @AlekseyVinokurov
 /requirements-release.txt @AlekseyVinokurov
+/run_updater.py @AlekseyVinokurov
+/.gitleaks.toml @AlekseyVinokurov

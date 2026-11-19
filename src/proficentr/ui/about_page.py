@@ -78,7 +78,9 @@ class AboutPage(QWidget):
     def _daily(self):
         stamp = settings.config_file().with_name("update-check.json")
         try:
-            last = json.loads(stamp.read_text())["attempt"]
+            last = float(json.loads(stamp.read_text())["attempt"])
+            if not 0 <= last <= time.time():
+                last = 0
         except (OSError, ValueError, KeyError, TypeError):
             last = 0
         if time.time() - last >= 86400:

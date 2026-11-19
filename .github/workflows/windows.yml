@@ -21,11 +21,11 @@ jobs:
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 0
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
           cache: pip
@@ -84,7 +84,7 @@ jobs:
       - name: Проверка обновления собранного EXE в Windows
         run: python scripts/windows_update_smoke.py
       - name: Загрузка ZIP (не пользовательский релиз)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Proficentr-Desktop-Windows
           path: dist/Proficentr-*-Windows.zip
