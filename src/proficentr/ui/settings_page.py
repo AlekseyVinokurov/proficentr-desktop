@@ -4,11 +4,13 @@ import os
 import sqlite3
 
 from PySide6.QtWidgets import (
-    QApplication, QFileDialog, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget,
+    QApplication, QFileDialog, QLabel, QMessageBox, QPushButton, QTabWidget, QVBoxLayout, QWidget,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSignalBlocker
 
 from proficentr.storage import relocate_storage
+from proficentr.organization import TrainingCenterRepository
+from proficentr.ui.training_center_page import TrainingCenterPage
 
 
 class SettingsPage(QWidget):
@@ -24,6 +26,11 @@ class SettingsPage(QWidget):
         font.setBold(True)
         title.setFont(font)
         layout.addWidget(title)
+        self.tabs = QTabWidget()
+        layout.addWidget(self.tabs)
+        storage_page = QWidget()
+        self.tabs.addTab(storage_page, "Хранилище")
+        layout = QVBoxLayout(storage_page)
         self.path_label = QLabel(f"Хранилище: {storage.root}\nSQLite: {database_path}")
         self.path_label.setWordWrap(True)
         self.path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -41,6 +48,21 @@ class SettingsPage(QWidget):
         note.setWordWrap(True)
         layout.addWidget(note)
         layout.addStretch()
+        repository = TrainingCenterRepository(database.connection, storage) if database else None
+        self.center_page = TrainingCenterPage(repository)
+        self.tabs.addTab(self.center_page, "Учебный центр")
+        self._tab_index = 0
+        self.tabs.currentChanged.connect(self._change_tab)
+
+    def confirm_leave(self):
+        return self.center_page.confirm_leave()
+
+    def _change_tab(self, index):
+        if self._tab_index == 1 and index != 1 and not self.confirm_leave():
+            with QSignalBlocker(self.tabs):
+                self.tabs.setCurrentIndex(1)
+            return
+        self._tab_index = index
 
     def refresh_status(self):
         try:
@@ -54,6 +76,8 @@ class SettingsPage(QWidget):
     def choose_directory(self):
         from pathlib import Path
 
+        if not self.confirm_leave():
+            return
         selected = QFileDialog.getExistingDirectory(self, "Новая папка хранилища")
         if not selected:
             return

@@ -12,6 +12,20 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
         version INTEGER PRIMARY KEY,
         applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )""",),
+    ("""CREATE TABLE training_center (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        full_name TEXT NOT NULL DEFAULT '', short_name TEXT NOT NULL DEFAULT '',
+        inn TEXT NOT NULL DEFAULT '', kpp TEXT NOT NULL DEFAULT '', ogrn TEXT NOT NULL DEFAULT '',
+        legal_address TEXT NOT NULL DEFAULT '', actual_address TEXT NOT NULL DEFAULT '',
+        postal_address TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '',
+        email TEXT NOT NULL DEFAULT '', website TEXT NOT NULL DEFAULT '',
+        bank_name TEXT NOT NULL DEFAULT '', bik TEXT NOT NULL DEFAULT '',
+        settlement_account TEXT NOT NULL DEFAULT '', correspondent_account TEXT NOT NULL DEFAULT '',
+        director_name TEXT NOT NULL DEFAULT '', director_position TEXT NOT NULL DEFAULT '',
+        director_genitive TEXT NOT NULL DEFAULT '', license_number TEXT NOT NULL DEFAULT '',
+        license_date TEXT NOT NULL DEFAULT '', license_authority TEXT NOT NULL DEFAULT '',
+        logo_path TEXT NOT NULL DEFAULT ''
+    )""",),
 )
 
 

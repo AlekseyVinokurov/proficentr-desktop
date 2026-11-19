@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSignalBlocker
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QListWidget, QMainWindow, QStackedWidget,
     QVBoxLayout, QWidget,
@@ -63,5 +63,16 @@ class MainWindow(QMainWindow):
 
     def _navigate(self, index: int) -> None:
         if 0 <= index < len(SECTIONS):
+            if self.pages.currentWidget() is self.settings_page and index != SECTIONS.index("Настройки"):
+                if not self.settings_page.confirm_leave():
+                    with QSignalBlocker(self.navigation):
+                        self.navigation.setCurrentRow(SECTIONS.index("Настройки"))
+                    return
             self.pages.setCurrentIndex(index)
             self.statusBar().showMessage(f"Готово • {SECTIONS[index]}")
+
+    def closeEvent(self, event):
+        if self.settings_page.confirm_leave():
+            event.accept()
+        else:
+            event.ignore()
