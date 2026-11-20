@@ -20,6 +20,8 @@ from proficentr.program_repository import ProgramRepository
 from proficentr.training_repository import TrainingRepository
 from proficentr.trainings import TrainingGroup, Training
 from proficentr.document_templates import TemplateRepository
+from proficentr.contract_repository import ContractRepository
+from proficentr.contracts import Contract
 from docx import Document
 
 
@@ -78,6 +80,25 @@ def main():
             template_files = {version.relative_path: (storage.root / version.relative_path).read_bytes()
                               for version in (first_template, second_template)}
             original_test_docx = test_docx.read_bytes()
+        sample_docx = Document()
+        sample_docx.add_paragraph('SYNTHETIC CONTRACT {{ document.number }} {{ customer.full_name }} {{ contract.total_price }}')
+        sample_docx.save(source_template)
+        with Database(storage.database_path) as db:
+            templates = TemplateRepository(db.connection, storage)
+            templates.register(source_template, 'contract_person', 'dpo', 'Synthetic contract')
+            contracts = ContractRepository(db.connection, storage)
+            draft_contract = contracts.save(Contract(customer_type='student', student_id=1, contract_date='2020-01-10',
+                                                      total_cents=12345, payment_terms='Synthetic payment terms'), [group_training.id])
+            registered_contract = contracts.register(draft_contract.id, contracts.prepare(draft_contract.id).signature)
+            historical = contracts.save(Contract(customer_type='person', person_data={'full_name': 'Synthetic payer'},
+                                                 contract_date='2018-01-10', historical_number='CI-HISTORICAL-01',
+                                                 total_cents=999, payment_terms='Synthetic offset terms'), [individual_training.id])
+            historical = contracts.register(historical.id, contracts.prepare(historical.id).signature)
+            annulled_contract = contracts.annul(historical.id, 'Synthetic cancellation reason')
+            draft_contract = contracts.save(Contract(customer_type='student', student_id=1, contract_date='2020-02-01',
+                                                     total_cents=500, payment_terms='Synthetic draft'), [group_training.id])
+            contract_files = {contract.id: contracts.verify_document(contract.id).read_bytes()
+                              for contract in (registered_contract, annulled_contract)}
         settings.save_directory(storage.root)
         (storage.root/'attachments'/'synthetic.txt').write_text('preserve me')
         config_before=settings.config_file().read_bytes()
@@ -138,6 +159,14 @@ def main():
                 # --smoke-test generated a new fictional DOCX inside the frozen EXE.
                 assert len(list((storage.root / 'exports' / 'template-tests').glob('*.docx'))) >= 3
                 assert templates.test_document(second_template.id).is_file()
+                contracts = ContractRepository(db.connection, storage)
+                assert contracts.load(registered_contract.id) == registered_contract
+                assert contracts.load(annulled_contract.id) == annulled_contract
+                assert contracts.load(draft_contract.id) == draft_contract
+                for contract_id, data in contract_files.items():
+                    assert contracts.verify_document(contract_id).read_bytes() == data
+                assert contracts.training_ids(registered_contract.id) == [group_training.id]
+                assert trainings.load(group_training.id).state == 'preparation'
         finally:
             if new_pid:subprocess.run(['taskkill','/PID',str(new_pid),'/T','/F'],check=False,capture_output=True)
             if helper_process.poll() is None:helper_process.kill();helper_process.wait()

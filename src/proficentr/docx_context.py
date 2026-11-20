@@ -6,16 +6,17 @@ import re
 
 CENTER_FIELDS = "full_name short_name inn kpp ogrn legal_address actual_address postal_address phone email website bank_name bik settlement_account correspondent_account director_name director_position director_genitive license_number license_date license_authority".split()
 STUDENT_FIELDS = "full_name surname first_name patronymic birth_date snils citizenship phone email registration_address residential_address passport_series passport_number passport_issued_by passport_issue_date passport_department_code education_level education_document education_details workplace job_title".split()
-CUSTOMER_FIELDS = "full_name short_name kind inn kpp ogrn legal_address actual_address postal_address phone email bank_name bik settlement_account correspondent_account representative_name representative_position authority_basis".split()
+CUSTOMER_FIELDS = "full_name short_name kind inn kpp ogrn legal_address actual_address postal_address phone email bank_name bik settlement_account correspondent_account representative_name representative_position authority_basis power_of_attorney birth_date registration_address passport_series passport_number passport_issued_by passport_issue_date passport_department_code".split()
 PROGRAM_FIELDS = "name direction kind hours code edition qualification grade".split()
 TRAINING_FIELDS = "start_date end_date state".split()
 SCHEMA = {
+    "contract": dict.fromkeys(("total_price", "payment_terms", "currency", "student_count")),
     "center": dict.fromkeys(CENTER_FIELDS),
     "student": dict.fromkeys(STUDENT_FIELDS),
     "customer": dict.fromkeys(CUSTOMER_FIELDS),
     "program": dict.fromkeys(PROGRAM_FIELDS),
     "training": dict.fromkeys(TRAINING_FIELDS),
-    "document": dict.fromkeys(("number", "date", "is_test")),
+    "document": dict.fromkeys(("number", "date", "is_test", "is_draft")),
     "group": dict.fromkeys(("name", "start_date", "end_date")),
     "students": [dict.fromkeys(STUDENT_FIELDS + ["start_date", "end_date"])],
 }
@@ -68,7 +69,8 @@ def fictional_context():
     context['program'].update(name='Вымышленная учебная программа', direction='dpo', kind='dpo_upskilling', hours=72, code='ПРИМЕР', edition='1')
     context['training'].update(start_date='2020-01-10', end_date='2020-02-10', state='Подготовка')
     context['group'].update(name='ТЕСТ-01', start_date='2020-01-10', end_date='2020-02-10')
-    context['document'].update(number='ТЕСТ — НЕ ЗАРЕГИСТРИРОВАН', date='2020-01-10', is_test=True)
+    context['contract'].update(total_price='1200,50', payment_terms='Вымышленный порядок оплаты', currency='RUB', student_count=2)
+    context['document'].update(is_draft=False, number='ТЕСТ — НЕ ЗАРЕГИСТРИРОВАН', date='2020-01-10', is_test=True)
     context['students'] = [dict(context['student'], start_date='2020-01-10', end_date='2020-02-10'),
                            dict(context['student'], full_name='Образцова Анна Тестовна', surname='Образцова', first_name='Анна', patronymic='Тестовна', start_date='2020-01-10', end_date='2020-02-10')]
     return deepcopy(context)

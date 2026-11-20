@@ -403,7 +403,7 @@ def test_migration_seven_preserves_six_and_existing_records(tmp_path, monkeypatc
         for table, rows in before.items():
             after = db.connection.execute(f'SELECT * FROM {table}').fetchall()
             assert (after[:6] if table == 'schema_migrations' else after) == rows
-        assert db.connection.execute('SELECT max(version) FROM schema_migrations').fetchone() == (7,)
+        assert db.connection.execute('SELECT max(version) FROM schema_migrations').fetchone() == (len(migrations),)
         assert db.connection.execute('PRAGMA foreign_key_check').fetchall() == []
     backups = list((storage.database_path.parent / 'migration-backups').glob('*.sqlite3'))
     assert len(backups) == 1

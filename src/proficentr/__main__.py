@@ -77,6 +77,10 @@ def main() -> int:
                 templates = window.settings_page.templates_page.repository
                 for version in templates.list_versions():
                     templates.test_document(version.id)
+                contracts = window.contracts_page.repository
+                for row in contracts.search():
+                    if row[-1] != 'draft':
+                        contracts.verify_document(row[0])
                 QTimer.singleShot(200, app.quit)
             return app.exec()
     except Exception as error:

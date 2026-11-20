@@ -2,7 +2,7 @@
 
 import json
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QHeaderView, QHBoxLayout,
     QLabel, QLineEdit, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem,
@@ -43,6 +43,8 @@ def selected_id(table):
 
 
 class TrainingList(QWidget):
+    contract_requested = Signal(object, object)
+
     def __init__(self, repository, *, group_id=None, parent=None):
         super().__init__(parent)
         self.repository = repository
@@ -66,7 +68,10 @@ class TrainingList(QWidget):
         self.exclude_button = QPushButton("Исключить из состава")
         self.exclude_button.setVisible(group_id is not None)
         self.exclude_button.clicked.connect(self.exclude)
-        for button in (self.add_button, self.open_button, self.exclude_button):
+        self.contract_button = QPushButton("Создать договор")
+        self.contract_button.clicked.connect(lambda: self.contract_requested.emit(
+            [selected_id(self.table)] if selected_id(self.table) else [], self.group_id))
+        for button in (self.add_button, self.open_button, self.exclude_button, self.contract_button):
             buttons.addWidget(button)
         layout.addLayout(buttons)
         self.table = make_table(("ФИО", "Программа (снимок)", "Начало", "Окончание", "Состояние"))
@@ -163,6 +168,8 @@ class TrainingList(QWidget):
 
 
 class GroupsPage(QWidget):
+    contract_requested = Signal(object, object)
+
     def __init__(self, repository):
         super().__init__()
         self.repository = repository
@@ -189,7 +196,9 @@ class GroupsPage(QWidget):
         self.members_button.clicked.connect(self.open_members)
         self.archive_button = QPushButton("В архив")
         self.archive_button.clicked.connect(self.toggle_active)
-        for button in (self.add_button, self.open_button, self.members_button, self.archive_button):
+        self.contract_button = QPushButton("Создать договор")
+        self.contract_button.clicked.connect(lambda: self.contract_requested.emit([], selected_id(self.table)))
+        for button in (self.add_button, self.open_button, self.members_button, self.archive_button, self.contract_button):
             buttons.addWidget(button)
         content.addLayout(buttons)
         self.table = make_table(("Группа", "Программа", "Начало", "Окончание", "Состояние"))
@@ -200,6 +209,7 @@ class GroupsPage(QWidget):
         content.addWidget(self.state)
         self.tabs.addTab(groups, "Учебные группы")
         self.individual = TrainingList(repository)
+        self.individual.contract_requested.connect(self.contract_requested.emit)
         self.tabs.addTab(self.individual, "Индивидуальное обучение")
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
@@ -218,7 +228,7 @@ class GroupsPage(QWidget):
 
     def selection_changed(self):
         record_id = selected_id(self.table)
-        for button in (self.open_button, self.members_button, self.archive_button):
+        for button in (self.open_button, self.members_button, self.archive_button, self.contract_button):
             button.setEnabled(record_id is not None)
         item = self.table.item(self.table.currentRow(), 4) if record_id else None
         self.archive_button.setText("Вернуть в активные" if item and item.text() == "Архивная" else "В архив")
@@ -264,7 +274,12 @@ class GroupsPage(QWidget):
             dialog.setWindowTitle(f"Состав группы: {group.name} · ID {group.id}")
             dialog.resize(960, 580)
             layout = QVBoxLayout(dialog)
-            layout.addWidget(TrainingList(self.repository, group_id=group_id, parent=dialog))
+            members = TrainingList(self.repository, group_id=group_id, parent=dialog)
+            def create_contract(training_ids, selected_group_id):
+                dialog.accept()
+                self.contract_requested.emit(training_ids, selected_group_id)
+            members.contract_requested.connect(create_contract)
+            layout.addWidget(members)
             close = QPushButton("Закрыть")
             close.clicked.connect(dialog.accept)
             layout.addWidget(close)

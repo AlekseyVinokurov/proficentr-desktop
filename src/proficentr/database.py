@@ -113,6 +113,55 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
         UNIQUE (document_type, variant, version)
     )""",
      "CREATE UNIQUE INDEX document_templates_active_idx ON document_templates(document_type, variant) WHERE active = 1"),
+    ("""CREATE TABLE contracts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_type TEXT NOT NULL CHECK (customer_type IN ('student','person','legal_entity','sole_proprietor')),
+        counterparty_id INTEGER REFERENCES counterparties(id), student_id INTEGER REFERENCES students(id),
+        person_data TEXT NOT NULL DEFAULT '{}', contract_date TEXT NOT NULL,
+        historical_number TEXT NOT NULL DEFAULT '', total_cents INTEGER NOT NULL CHECK (typeof(total_cents) = 'integer' AND total_cents >= 0),
+        payment_terms TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
+        state TEXT NOT NULL DEFAULT 'draft' CHECK (state IN ('draft','registered','annulled')),
+        number TEXT, number_key TEXT UNIQUE, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        registered_at TEXT NOT NULL DEFAULT '', template_id INTEGER REFERENCES document_templates(id),
+        document_path TEXT NOT NULL DEFAULT '', document_sha256 TEXT NOT NULL DEFAULT '', snapshot TEXT NOT NULL DEFAULT '{}',
+        annul_reason TEXT NOT NULL DEFAULT '', annulled_at TEXT NOT NULL DEFAULT '', revision INTEGER NOT NULL DEFAULT 1,
+        CHECK ((number IS NULL) = (number_key IS NULL)),
+        CHECK ((state = 'draft' AND number IS NULL AND registered_at = '' AND document_path = '' AND snapshot = '{}') OR
+               (state IN ('registered','annulled') AND length(number) > 0 AND length(number_key) > 0
+                AND registered_at != '' AND template_id IS NOT NULL AND document_path != '' AND length(document_sha256) = 64 AND snapshot != '{}')),
+        CHECK (state != 'annulled' OR (length(trim(annul_reason)) > 0 AND annulled_at != ''))
+    )""",
+     """CREATE TABLE contract_trainings (
+        contract_id INTEGER NOT NULL REFERENCES contracts(id), training_id INTEGER NOT NULL REFERENCES trainings(id),
+        position INTEGER NOT NULL, PRIMARY KEY (contract_id, training_id), UNIQUE (contract_id, position)
+    )""",
+     "CREATE INDEX contract_trainings_training_idx ON contract_trainings(training_id)",
+     "CREATE INDEX contracts_counterparty_idx ON contracts(counterparty_id)",
+     "CREATE INDEX contracts_student_idx ON contracts(student_id)",
+     "CREATE INDEX contracts_template_idx ON contracts(template_id)",
+     "CREATE INDEX contracts_date_idx ON contracts(contract_date)",
+     "CREATE TABLE contract_sequences (year INTEGER PRIMARY KEY, last_value INTEGER NOT NULL CHECK (last_value > 0))",
+     """CREATE TRIGGER contracts_no_delete BEFORE DELETE ON contracts WHEN OLD.state != 'draft'
+        BEGIN SELECT RAISE(ABORT, 'Registered contract is immutable'); END""",
+     """CREATE TRIGGER contracts_immutable BEFORE UPDATE ON contracts WHEN OLD.state != 'draft' AND NOT (
+        OLD.state = 'registered' AND NEW.state = 'annulled' AND NEW.annul_reason != '' AND NEW.annulled_at != ''
+        AND NEW.id IS OLD.id AND NEW.customer_type IS OLD.customer_type AND NEW.counterparty_id IS OLD.counterparty_id
+        AND NEW.student_id IS OLD.student_id AND NEW.person_data IS OLD.person_data AND NEW.contract_date IS OLD.contract_date
+        AND NEW.historical_number IS OLD.historical_number AND NEW.total_cents IS OLD.total_cents AND NEW.payment_terms IS OLD.payment_terms
+        AND NEW.note IS OLD.note AND NEW.number IS OLD.number AND NEW.number_key IS OLD.number_key AND NEW.created_at IS OLD.created_at
+        AND NEW.registered_at IS OLD.registered_at AND NEW.template_id IS OLD.template_id AND NEW.document_path IS OLD.document_path
+        AND NEW.document_sha256 IS OLD.document_sha256 AND NEW.snapshot IS OLD.snapshot AND NEW.revision = OLD.revision + 1)
+        BEGIN SELECT RAISE(ABORT, 'Registered contract is immutable'); END""",
+     """CREATE TRIGGER contract_links_no_insert BEFORE INSERT ON contract_trainings
+        WHEN (SELECT state FROM contracts WHERE id = NEW.contract_id) != 'draft'
+        BEGIN SELECT RAISE(ABORT, 'Registered contract links are immutable'); END""",
+     """CREATE TRIGGER contract_links_no_delete BEFORE DELETE ON contract_trainings
+        WHEN (SELECT state FROM contracts WHERE id = OLD.contract_id) != 'draft'
+        BEGIN SELECT RAISE(ABORT, 'Registered contract links are immutable'); END""",
+     """CREATE TRIGGER contract_links_no_update BEFORE UPDATE ON contract_trainings
+        WHEN (SELECT state FROM contracts WHERE id = OLD.contract_id) != 'draft'
+          OR (SELECT state FROM contracts WHERE id = NEW.contract_id) != 'draft'
+        BEGIN SELECT RAISE(ABORT, 'Registered contract links are immutable'); END"""),
 )
 
 

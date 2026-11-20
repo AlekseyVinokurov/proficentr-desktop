@@ -17,6 +17,8 @@ from proficentr.program_repository import ProgramRepository
 from proficentr.ui.programs_page import ProgramsPage
 from proficentr.training_repository import TrainingRepository
 from proficentr.ui.groups_page import GroupsPage
+from proficentr.contract_repository import ContractRepository
+from proficentr.ui.contracts_page import ContractsPage
 
 
 SECTIONS = (
@@ -55,6 +57,11 @@ class MainWindow(QMainWindow):
                 self.groups_page = GroupsPage(TrainingRepository(database.connection) if database else None)
                 self.pages.addWidget(self.groups_page)
                 continue
+            if section == "Документы":
+                root = database_path.parent.parent if database_path.parent.name == "database" else database_path.parent
+                self.contracts_page = ContractsPage(ContractRepository(database.connection, storage or Storage(root)) if database else None)
+                self.pages.addWidget(self.contracts_page)
+                continue
             if section == "Настройки":
                 root = database_path.parent.parent if database_path.parent.name == "database" else database_path.parent
                 self.settings_page = SettingsPage(database_path, storage or Storage(root), database)
@@ -84,6 +91,11 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(container)
         self.navigation.currentRowChanged.connect(self._navigate)
         self.navigation.setCurrentRow(0)
+        self.groups_page.contract_requested.connect(self._create_contract)
+
+    def _create_contract(self, training_ids, group_id):
+        self.navigation.setCurrentRow(SECTIONS.index("Документы"))
+        self.contracts_page.open_card(training_ids=training_ids, group_id=group_id)
 
     def _navigate(self, index: int) -> None:
         if 0 <= index < len(SECTIONS):
