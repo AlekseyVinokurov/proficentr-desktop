@@ -5,7 +5,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QSignalBlocker
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QListWidget, QMainWindow, QStackedWidget,
-    QVBoxLayout, QWidget,
+    QVBoxLayout, QWidget, QTabWidget,
 )
 from proficentr.storage import Storage
 from proficentr.ui.settings_page import SettingsPage
@@ -19,6 +19,8 @@ from proficentr.training_repository import TrainingRepository
 from proficentr.ui.groups_page import GroupsPage
 from proficentr.contract_repository import ContractRepository
 from proficentr.ui.contracts_page import ContractsPage
+from proficentr.enrollment_order_repository import EnrollmentOrderRepository
+from proficentr.ui.enrollment_orders_page import EnrollmentOrdersPage
 
 
 SECTIONS = (
@@ -60,7 +62,11 @@ class MainWindow(QMainWindow):
             if section == "Документы":
                 root = database_path.parent.parent if database_path.parent.name == "database" else database_path.parent
                 self.contracts_page = ContractsPage(ContractRepository(database.connection, storage or Storage(root)) if database else None)
-                self.pages.addWidget(self.contracts_page)
+                self.orders_page = EnrollmentOrdersPage(EnrollmentOrderRepository(database.connection, storage or Storage(root)) if database else None)
+                self.documents_page = QTabWidget()
+                self.documents_page.addTab(self.contracts_page, "Договоры")
+                self.documents_page.addTab(self.orders_page, "Приказы о зачислении")
+                self.pages.addWidget(self.documents_page)
                 continue
             if section == "Настройки":
                 root = database_path.parent.parent if database_path.parent.name == "database" else database_path.parent
@@ -92,10 +98,17 @@ class MainWindow(QMainWindow):
         self.navigation.currentRowChanged.connect(self._navigate)
         self.navigation.setCurrentRow(0)
         self.groups_page.contract_requested.connect(self._create_contract)
+        self.groups_page.order_requested.connect(self._create_order)
 
     def _create_contract(self, training_ids, group_id):
         self.navigation.setCurrentRow(SECTIONS.index("Документы"))
+        self.documents_page.setCurrentWidget(self.contracts_page)
         self.contracts_page.open_card(training_ids=training_ids, group_id=group_id)
+
+    def _create_order(self, training_ids, group_id):
+        self.navigation.setCurrentRow(SECTIONS.index("Документы"))
+        self.documents_page.setCurrentWidget(self.orders_page)
+        self.orders_page.open_card(training_ids=training_ids, group_id=group_id)
 
     def _navigate(self, index: int) -> None:
         if 0 <= index < len(SECTIONS):

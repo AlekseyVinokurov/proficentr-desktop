@@ -21,6 +21,8 @@ from proficentr.training_repository import TrainingRepository
 from proficentr.trainings import TrainingGroup, Training
 from proficentr.document_templates import TemplateRepository
 from proficentr.contract_repository import ContractRepository
+from proficentr.enrollment_orders import EnrollmentOrder
+from proficentr.enrollment_order_repository import EnrollmentOrderRepository
 from proficentr.contracts import Contract
 from docx import Document
 
@@ -99,6 +101,23 @@ def main():
                                                      total_cents=500, payment_terms='Synthetic draft'), [group_training.id])
             contract_files = {contract.id: contracts.verify_document(contract.id).read_bytes()
                               for contract in (registered_contract, annulled_contract)}
+        sample_docx = Document()
+        sample_docx.add_paragraph('{{ document.number }} {{ document.date }} {{ program.name }}')
+        sample_docx.add_paragraph('{% for row in students %}{{ row.full_name }} {{ row.start_date }} {{ row.end_date }}{% endfor %}')
+        sample_docx.save(source_template)
+        with Database(storage.database_path) as db:
+            orders = EnrollmentOrderRepository(db.connection, storage)
+            orders.templates.register(source_template, 'enrollment_order', 'dpo-group', 'Synthetic group order')
+            orders.templates.register(source_template, 'enrollment_order', 'dpo-individual', 'Synthetic individual order')
+            registered_order = orders.save(EnrollmentOrder(order_date='2020-01-01',kind='group',group_id=active_group.id), [group_training.id])
+            registered_order = orders.register(registered_order.id, orders.prepare(registered_order.id).signature)
+            signed_order = orders.save(EnrollmentOrder(order_date='2020-01-01'), [individual_training.id])
+            signed_order = orders.register(signed_order.id, orders.prepare(signed_order.id).signature)
+            signed_order = orders.confirm_signing(signed_order.id, signed_date='2020-01-02',confirmed_by='Synthetic responsible',grounds_checked=True,education_checked=True)
+            individual_training = TrainingRepository(db.connection).load(individual_training.id)
+            order_files = {o.id: orders.verify_document(o.id).read_bytes() for o in (registered_order,signed_order)}
+            order_templates = {v.id: v for v in orders.templates.list_versions('enrollment_order')}
+            order_template_files = {v.relative_path: (storage.root / v.relative_path).read_bytes() for v in order_templates.values()}
         settings.save_directory(storage.root)
         (storage.root/'attachments'/'synthetic.txt').write_text('preserve me')
         config_before=settings.config_file().read_bytes()
@@ -167,6 +186,22 @@ def main():
                     assert contracts.verify_document(contract_id).read_bytes() == data
                 assert contracts.training_ids(registered_contract.id) == [group_training.id]
                 assert trainings.load(group_training.id).state == 'preparation'
+                orders = EnrollmentOrderRepository(db.connection, storage)
+                assert orders.load(registered_order.id) == registered_order
+                assert orders.load(signed_order.id) == signed_order
+                for order_id, data in order_files.items():
+                    assert orders.verify_document(order_id).read_bytes() == data
+                for template_id, version in order_templates.items():
+                    assert templates.load(template_id) == version
+                for relative_path, data in order_template_files.items():
+                    assert (storage.root / relative_path).read_bytes() == data
+                assert orders.training_ids(registered_order.id) == [group_training.id]
+                assert orders.training_ids(signed_order.id) == [individual_training.id]
+                assert trainings.load(individual_training.id).state == 'enrolled'
+                assert db.connection.execute('SELECT order_id FROM training_enrollments WHERE training_id=?', (individual_training.id,)).fetchone() == (signed_order.id,)
+                package, warnings = orders.prepare_package(registered_order.id)
+                assert (package / 'Приказ.docx').is_file()
+                assert len(list(package.glob('*.docx'))) == 2
         finally:
             if new_pid:subprocess.run(['taskkill','/PID',str(new_pid),'/T','/F'],check=False,capture_output=True)
             if helper_process.poll() is None:helper_process.kill();helper_process.wait()

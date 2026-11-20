@@ -10,6 +10,7 @@ CUSTOMER_FIELDS = "full_name short_name kind inn kpp ogrn legal_address actual_a
 PROGRAM_FIELDS = "name direction kind hours code edition qualification grade".split()
 TRAINING_FIELDS = "start_date end_date state".split()
 SCHEMA = {
+    "order": dict.fromkeys(("kind", "student_count")),
     "contract": dict.fromkeys(("total_price", "payment_terms", "currency", "student_count")),
     "center": dict.fromkeys(CENTER_FIELDS),
     "student": dict.fromkeys(STUDENT_FIELDS),
@@ -69,6 +70,7 @@ def fictional_context():
     context['program'].update(name='Вымышленная учебная программа', direction='dpo', kind='dpo_upskilling', hours=72, code='ПРИМЕР', edition='1')
     context['training'].update(start_date='2020-01-10', end_date='2020-02-10', state='Подготовка')
     context['group'].update(name='ТЕСТ-01', start_date='2020-01-10', end_date='2020-02-10')
+    context['order'].update(kind='group', student_count=2)
     context['contract'].update(total_price='1200,50', payment_terms='Вымышленный порядок оплаты', currency='RUB', student_count=2)
     context['document'].update(is_draft=False, number='ТЕСТ — НЕ ЗАРЕГИСТРИРОВАН', date='2020-01-10', is_test=True)
     context['students'] = [dict(context['student'], start_date='2020-01-10', end_date='2020-02-10'),

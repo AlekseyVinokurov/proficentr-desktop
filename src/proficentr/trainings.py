@@ -1,4 +1,4 @@
-"""Подготовительные обучения и группы; без юридического зачисления."""
+"""Обучения и группы; зачисление подтверждается отдельным приказом."""
 
 from dataclasses import dataclass, replace
 
@@ -6,7 +6,8 @@ from proficentr.students import iso_date
 
 PREPARATION = "preparation"
 EXCLUDED = "excluded"
-STATES = {PREPARATION: "Подготовка", EXCLUDED: "Исключён из состава (подготовка)"}
+ENROLLED = "enrolled"
+STATES = {ENROLLED: "Зачислен", PREPARATION: "Подготовка", EXCLUDED: "Исключён из состава (подготовка)"}
 
 
 @dataclass(repr=False)

@@ -162,6 +162,71 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
         WHEN (SELECT state FROM contracts WHERE id = OLD.contract_id) != 'draft'
           OR (SELECT state FROM contracts WHERE id = NEW.contract_id) != 'draft'
         BEGIN SELECT RAISE(ABORT, 'Registered contract links are immutable'); END"""),
+    ("""CREATE TABLE enrollment_orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, order_date TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('individual','group')), group_id INTEGER REFERENCES training_groups(id),
+        historical_number TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', template_id INTEGER REFERENCES document_templates(id),
+        state TEXT NOT NULL DEFAULT 'draft' CHECK (state IN ('draft','registered','signed')),
+        number TEXT, number_key TEXT UNIQUE, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        registered_at TEXT NOT NULL DEFAULT '', document_path TEXT NOT NULL DEFAULT '', document_sha256 TEXT NOT NULL DEFAULT '',
+        snapshot TEXT NOT NULL DEFAULT '{}', signed_date TEXT NOT NULL DEFAULT '', confirmed_at TEXT NOT NULL DEFAULT '',
+        confirmed_by TEXT NOT NULL DEFAULT '', grounds_checked INTEGER NOT NULL DEFAULT 0 CHECK (grounds_checked IN (0,1)),
+        education_checked INTEGER NOT NULL DEFAULT 0 CHECK (education_checked IN (0,1)), revision INTEGER NOT NULL DEFAULT 1,
+        UNIQUE (id,state), CHECK ((number IS NULL) = (number_key IS NULL)),
+        CHECK ((state = 'draft' AND number IS NULL AND registered_at = '' AND document_path = '' AND snapshot = '{}') OR
+               (state != 'draft' AND length(number) > 0 AND length(number_key) > 0 AND registered_at != ''
+                AND template_id IS NOT NULL AND document_path != '' AND length(document_sha256) = 64 AND snapshot != '{}')),
+        CHECK ((state != 'signed' AND signed_date = '' AND confirmed_at = '' AND confirmed_by = '' AND grounds_checked = 0 AND education_checked = 0) OR
+               (state = 'signed' AND signed_date >= order_date AND confirmed_at != '' AND length(trim(confirmed_by)) > 0 AND grounds_checked = 1 AND education_checked = 1))
+    )""",
+     """CREATE TABLE enrollment_order_trainings (
+        order_id INTEGER NOT NULL REFERENCES enrollment_orders(id), training_id INTEGER NOT NULL REFERENCES trainings(id),
+        position INTEGER NOT NULL, PRIMARY KEY (order_id,training_id), UNIQUE (order_id,position)
+     )""",
+     "CREATE INDEX enrollment_order_trainings_training_idx ON enrollment_order_trainings(training_id)",
+     "CREATE TABLE enrollment_order_sequences (year INTEGER PRIMARY KEY, last_value INTEGER NOT NULL CHECK (last_value > 0))",
+     """CREATE TABLE training_enrollments (
+        training_id INTEGER PRIMARY KEY REFERENCES trainings(id), order_id INTEGER NOT NULL,
+        order_state TEXT NOT NULL DEFAULT 'signed' CHECK (order_state = 'signed'),
+        FOREIGN KEY (order_id,training_id) REFERENCES enrollment_order_trainings(order_id,training_id),
+        FOREIGN KEY (order_id,order_state) REFERENCES enrollment_orders(id,state) DEFERRABLE INITIALLY DEFERRED
+     )""",
+     """CREATE TRIGGER enrollment_orders_insert BEFORE INSERT ON enrollment_orders WHEN NEW.state != 'draft'
+        BEGIN SELECT RAISE(ABORT, 'Create a draft first'); END""",
+     """CREATE TRIGGER enrollment_orders_no_delete BEFORE DELETE ON enrollment_orders WHEN OLD.state != 'draft'
+        BEGIN SELECT RAISE(ABORT, 'Registered order is immutable'); END""",
+     """CREATE TRIGGER enrollment_orders_immutable BEFORE UPDATE ON enrollment_orders WHEN OLD.state != 'draft' AND NOT (
+        OLD.state = 'registered' AND NEW.state = 'signed' AND NEW.revision = OLD.revision + 1
+        AND NEW.id IS OLD.id AND NEW.order_date IS OLD.order_date AND NEW.kind IS OLD.kind AND NEW.group_id IS OLD.group_id AND NEW.historical_number IS OLD.historical_number AND NEW.note IS OLD.note AND NEW.template_id IS OLD.template_id AND NEW.number IS OLD.number AND NEW.number_key IS OLD.number_key AND NEW.created_at IS OLD.created_at AND NEW.registered_at IS OLD.registered_at AND NEW.document_path IS OLD.document_path AND NEW.document_sha256 IS OLD.document_sha256 AND NEW.snapshot IS OLD.snapshot AND (SELECT count(*) FROM training_enrollments WHERE order_id = OLD.id) > 0
+        AND (SELECT count(*) FROM training_enrollments WHERE order_id = OLD.id) =
+            (SELECT count(*) FROM enrollment_order_trainings WHERE order_id = OLD.id))
+        BEGIN SELECT RAISE(ABORT, 'Registered order is immutable'); END""",
+     """CREATE TRIGGER enrollment_draft_no_sign BEFORE UPDATE ON enrollment_orders WHEN OLD.state = 'draft' AND NEW.state = 'signed'
+        BEGIN SELECT RAISE(ABORT, 'Register order before signing'); END""",
+     """CREATE TRIGGER enrollment_links_no_insert BEFORE INSERT ON enrollment_order_trainings
+        WHEN (SELECT state FROM enrollment_orders WHERE id = NEW.order_id) != 'draft'
+        BEGIN SELECT RAISE(ABORT, 'Registered order composition is immutable'); END""",
+     """CREATE TRIGGER enrollment_links_no_delete BEFORE DELETE ON enrollment_order_trainings
+        WHEN (SELECT state FROM enrollment_orders WHERE id = OLD.order_id) != 'draft'
+        BEGIN SELECT RAISE(ABORT, 'Registered order composition is immutable'); END""",
+     """CREATE TRIGGER enrollment_links_no_update BEFORE UPDATE ON enrollment_order_trainings
+        WHEN (SELECT state FROM enrollment_orders WHERE id = OLD.order_id) != 'draft' OR (SELECT state FROM enrollment_orders WHERE id = NEW.order_id) != 'draft'
+        BEGIN SELECT RAISE(ABORT, 'Registered order composition is immutable'); END""",
+     """CREATE TRIGGER training_enrollments_insert BEFORE INSERT ON training_enrollments
+        WHEN (SELECT state FROM enrollment_orders WHERE id = NEW.order_id) != 'registered'
+          OR (SELECT state FROM trainings WHERE id = NEW.training_id) != 'preparation'
+        BEGIN SELECT RAISE(ABORT, 'Only prepared trainings and registered orders may be confirmed'); END""",
+     """CREATE TRIGGER training_enrollments_no_update BEFORE UPDATE ON training_enrollments
+        BEGIN SELECT RAISE(ABORT, 'Enrollment is immutable'); END""",
+     """CREATE TRIGGER training_enrollments_no_delete BEFORE DELETE ON training_enrollments
+        BEGIN SELECT RAISE(ABORT, 'Enrollment is immutable'); END""",
+     """CREATE TRIGGER enrolled_trainings_no_update BEFORE UPDATE ON trainings WHEN EXISTS (SELECT 1 FROM training_enrollments WHERE training_id = OLD.id)
+        BEGIN SELECT RAISE(ABORT, 'Enrolled training is immutable'); END""",
+     """CREATE TRIGGER enrolled_trainings_no_delete BEFORE DELETE ON trainings WHEN EXISTS (SELECT 1 FROM training_enrollments WHERE training_id = OLD.id)
+        BEGIN SELECT RAISE(ABORT, 'Enrolled training is immutable'); END""",
+     """CREATE TRIGGER enrolled_group_program BEFORE UPDATE OF program_id ON training_groups
+        WHEN NEW.program_id != OLD.program_id AND EXISTS (SELECT 1 FROM trainings t JOIN training_enrollments e ON e.training_id = t.id WHERE t.group_id = OLD.id)
+        BEGIN SELECT RAISE(ABORT, 'Enrolled group program is immutable'); END"""),
 )
 
 

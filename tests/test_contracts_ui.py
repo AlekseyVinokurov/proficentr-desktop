@@ -59,7 +59,8 @@ def test_single_card_save_preview_confirm_registration_and_registry(context, mon
     window, repo, group, members, one = context
     window.navigation.setCurrentRow(SECTIONS.index('Документы'))
     page = window.contracts_page
-    assert window.pages.currentWidget() is page and page.table.rowCount() == 0
+    assert window.pages.currentWidget() is window.documents_page and page.table.rowCount() == 0
+    assert window.documents_page.currentWidget() is page
     def execute(dialog):
         assert len(dialog.training_ids) == 1
         assert dialog.customer_student.currentData() == one.id
@@ -197,7 +198,8 @@ def test_quick_entry_from_group_and_individual_sections(context, monkeypatch):
     page.refresh(group.id)
     page.contract_button.click()
     assert calls[-1] == {'training_ids': [], 'group_id': group.id}
-    assert window.pages.currentWidget() is window.contracts_page
+    assert window.pages.currentWidget() is window.documents_page
+    assert window.documents_page.currentWidget() is window.contracts_page
     page.individual.contract_requested.emit([members[0].id], None)
     assert calls[-1] == {'training_ids': [members[0].id], 'group_id': None}
 

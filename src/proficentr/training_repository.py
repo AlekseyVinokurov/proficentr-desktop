@@ -8,7 +8,7 @@ import sqlite3
 from proficentr.program_repository import ProgramRepository, ProgramRepositoryError
 from proficentr.students import is_adult, iso_date
 from proficentr.trainings import (
-    EXCLUDED, PREPARATION, Training, TrainingGroup, validate_group, validate_training,
+    ENROLLED, EXCLUDED, PREPARATION, Training, TrainingGroup, validate_group, validate_training,
 )
 
 GROUP_FIELDS = tuple(asdict(TrainingGroup()))
@@ -36,6 +36,7 @@ class TrainingRepository:
     def __init__(self, connection):
         self.connection = connection
         self.programs = ProgramRepository(connection)
+        self.has_enrollments = bool(connection.execute("SELECT 1 FROM sqlite_master WHERE name = 'training_enrollments'").fetchone())
         connection.create_function("training_fold", 1, lambda value: " ".join(value.split()).casefold(), deterministic=True)
 
     @contextmanager
@@ -67,7 +68,10 @@ class TrainingRepository:
         return self._load("training_groups", GROUP_FIELDS, TrainingGroup, group_id)
 
     def load(self, training_id):
-        return self._load("trainings", TRAINING_FIELDS, Training, training_id)
+        record = self._load("trainings", TRAINING_FIELDS, Training, training_id)
+        if self.has_enrollments and self.connection.execute("SELECT 1 FROM training_enrollments WHERE training_id = ?", (training_id,)).fetchone():
+            record = replace(record, state=ENROLLED)
+        return record
 
     def _write(self, table, fields, record):
         values = asdict(record)
@@ -99,6 +103,8 @@ class TrainingRepository:
             changed = old is not None and old.program_id != group.program_id
             snapshot = self._snapshot(group.program_id, require_active=old is None or changed)
             if changed:
+                if self.has_enrollments and self.connection.execute("SELECT 1 FROM training_enrollments e JOIN trainings t ON t.id = e.training_id WHERE t.group_id = ?", (group.id,)).fetchone():
+                    raise ValueError("Есть зачисленные записи: изменение программы группы запрещено.")
                 members = self.connection.execute("SELECT id, state FROM trainings WHERE group_id = ?", (group.id,)).fetchall()
                 if members and not change_program:
                     raise ProgramChangeRequired("Программа группы изменена. Явно подтвердите обновление программы и снимков всех подготовительных записей состава.")
@@ -209,7 +215,9 @@ class TrainingRepository:
             # Only display fields: passports, SNILS and full student cards are not loaded.
             return self.connection.execute(
                 "SELECT t.id, s.surname || ' ' || s.first_name || ' ' || s.patronymic, "
-                "t.program_snapshot, t.start_date, t.end_date, t.state "
+                "t.program_snapshot, t.start_date, t.end_date, "  # nosec B608 # Fixed state projections; bound parameters.
+                + ("CASE WHEN EXISTS (SELECT 1 FROM training_enrollments e WHERE e.training_id = t.id) THEN 'enrolled' ELSE t.state END " if self.has_enrollments else "t.state ")
+                +
                 "FROM trainings t JOIN students s ON s.id = t.student_id "
                 "WHERE ((? IS NULL AND t.group_id IS NULL) OR t.group_id = ?) "
                 "AND (? OR t.state = 'preparation') "

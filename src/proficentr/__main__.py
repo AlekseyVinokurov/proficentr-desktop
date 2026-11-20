@@ -81,6 +81,10 @@ def main() -> int:
                 for row in contracts.search():
                     if row[-1] != 'draft':
                         contracts.verify_document(row[0])
+                orders = window.orders_page.repository
+                for row in orders.search():
+                    if row[-1] != "draft":
+                        orders.verify_document(row[0])
                 QTimer.singleShot(200, app.quit)
             return app.exec()
     except Exception as error:

@@ -44,6 +44,7 @@ def selected_id(table):
 
 class TrainingList(QWidget):
     contract_requested = Signal(object, object)
+    order_requested = Signal(object, object)
 
     def __init__(self, repository, *, group_id=None, parent=None):
         super().__init__(parent)
@@ -71,9 +72,14 @@ class TrainingList(QWidget):
         self.contract_button = QPushButton("Создать договор")
         self.contract_button.clicked.connect(lambda: self.contract_requested.emit(
             [selected_id(self.table)] if selected_id(self.table) else [], self.group_id))
-        for button in (self.add_button, self.open_button, self.exclude_button, self.contract_button):
+        for button in (self.add_button, self.open_button, self.exclude_button):
             buttons.addWidget(button)
         layout.addLayout(buttons)
+        documents = QHBoxLayout()
+        self.order_button = QPushButton("Создать приказ")
+        self.order_button.clicked.connect(lambda: self.order_requested.emit([selected_id(self.table)] if selected_id(self.table) else [], self.group_id))
+        documents.addWidget(self.contract_button); documents.addWidget(self.order_button)
+        layout.addLayout(documents)
         self.table = make_table(("ФИО", "Программа (снимок)", "Начало", "Окончание", "Состояние"))
         self.table.cellDoubleClicked.connect(lambda: self.open_selected())
         self.table.itemSelectionChanged.connect(self.selection_changed)
@@ -145,6 +151,9 @@ class TrainingList(QWidget):
             return
         try:
             training = self.repository.load(training_id)
+            if training.state == "enrolled":
+                QMessageBox.information(self, "Зачислен", "Обучение зачислено на основании подтверждённого подписанного приказа. Программа, снимок, период и группа защищены от обычного изменения. Приказ доступен в разделе «Документы».")
+                return
             if training.state != PREPARATION:
                 QMessageBox.information(self, "Исключённая запись", "Запись сохранена в истории состава. Для повторного добавления выберите слушателя через «Добавить слушателей».")
                 return
@@ -169,6 +178,7 @@ class TrainingList(QWidget):
 
 class GroupsPage(QWidget):
     contract_requested = Signal(object, object)
+    order_requested = Signal(object, object)
 
     def __init__(self, repository):
         super().__init__()
@@ -198,9 +208,14 @@ class GroupsPage(QWidget):
         self.archive_button.clicked.connect(self.toggle_active)
         self.contract_button = QPushButton("Создать договор")
         self.contract_button.clicked.connect(lambda: self.contract_requested.emit([], selected_id(self.table)))
-        for button in (self.add_button, self.open_button, self.members_button, self.archive_button, self.contract_button):
+        for button in (self.add_button, self.open_button, self.members_button, self.archive_button):
             buttons.addWidget(button)
         content.addLayout(buttons)
+        documents = QHBoxLayout()
+        self.order_button = QPushButton("Создать приказ")
+        self.order_button.clicked.connect(lambda: self.order_requested.emit([], selected_id(self.table)))
+        documents.addWidget(self.contract_button); documents.addWidget(self.order_button)
+        content.addLayout(documents)
         self.table = make_table(("Группа", "Программа", "Начало", "Окончание", "Состояние"))
         self.table.cellDoubleClicked.connect(lambda: self.open_selected())
         self.table.itemSelectionChanged.connect(self.selection_changed)
@@ -210,6 +225,7 @@ class GroupsPage(QWidget):
         self.tabs.addTab(groups, "Учебные группы")
         self.individual = TrainingList(repository)
         self.individual.contract_requested.connect(self.contract_requested.emit)
+        self.individual.order_requested.connect(self.order_requested.emit)
         self.tabs.addTab(self.individual, "Индивидуальное обучение")
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
@@ -228,7 +244,7 @@ class GroupsPage(QWidget):
 
     def selection_changed(self):
         record_id = selected_id(self.table)
-        for button in (self.open_button, self.members_button, self.archive_button, self.contract_button):
+        for button in (self.open_button, self.members_button, self.archive_button, self.contract_button, self.order_button):
             button.setEnabled(record_id is not None)
         item = self.table.item(self.table.currentRow(), 4) if record_id else None
         self.archive_button.setText("Вернуть в активные" if item and item.text() == "Архивная" else "В архив")
@@ -279,6 +295,10 @@ class GroupsPage(QWidget):
                 dialog.accept()
                 self.contract_requested.emit(training_ids, selected_group_id)
             members.contract_requested.connect(create_contract)
+            def create_order(training_ids, selected_group_id):
+                dialog.accept()
+                self.order_requested.emit(training_ids, selected_group_id)
+            members.order_requested.connect(create_order)
             layout.addWidget(members)
             close = QPushButton("Закрыть")
             close.clicked.connect(dialog.accept)

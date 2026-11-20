@@ -411,7 +411,7 @@ def test_migration_eight_preserves_all_seven_tables_and_files(tmp_path, monkeypa
             original = (storage.root / version.relative_path).read_bytes()
     for _ in range(2):
         with open_database(storage) as db:
-            assert db.connection.execute('SELECT max(version) FROM schema_migrations').fetchone() == (8,)
+            assert db.connection.execute('SELECT max(version) FROM schema_migrations').fetchone() == (len(db_module.MIGRATIONS),)
             for table, rows in before.items():
                 actual = db.connection.execute(f'SELECT * FROM {table}').fetchall()
                 assert (actual[:7] if table == 'schema_migrations' else actual) == rows
