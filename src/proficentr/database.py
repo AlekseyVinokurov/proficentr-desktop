@@ -432,6 +432,11 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
     BEGIN SELECT RAISE(ABORT,'Create a draft first; registered documents are immutable'); END""",
      """CREATE TRIGGER issued_immutable BEFORE UPDATE ON issued_documents WHEN OLD.state='registered'
     BEGIN SELECT RAISE(ABORT,'Registered document is immutable'); END""",
+     """CREATE TRIGGER issued_update_conflicts BEFORE UPDATE ON issued_documents WHEN EXISTS
+    (SELECT 1 FROM issued_documents r WHERE r.state='registered' AND r.id!=OLD.id AND
+        (r.id=NEW.id OR (NEW.state='registered' AND (r.training_id=NEW.training_id OR
+            (r.kind=NEW.kind AND (r.number_key=NEW.number_key OR (NEW.blank_key IS NOT NULL AND r.blank_key=NEW.blank_key)))))))
+    BEGIN SELECT RAISE(ABORT,'Registered documents cannot be replaced through another draft'); END""",
      """CREATE TRIGGER issued_no_delete BEFORE DELETE ON issued_documents WHEN OLD.state='registered'
     BEGIN SELECT RAISE(ABORT,'Registered document cannot be deleted'); END""",
      """CREATE TRIGGER issued_basis BEFORE INSERT ON issued_documents WHEN NOT EXISTS

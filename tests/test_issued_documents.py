@@ -155,7 +155,20 @@ def test_registered_immutable_sql_and_repository(issued,sql):
 
 
 def test_copy_hash_and_orphan_recovery(issued):
-    r=issued;d=register(r,draft(r));path=r.repo.verify_document(d.id);copy=r.repo.document_copy(d.id);copy.write_bytes(b'edit')
+    r=issued;d=register(r,draft(r,blank_number='TEST-BLANK'));path=r.repo.verify_document(d.id);copy=r.repo.document_copy(d.id);copy.write_bytes(b'edit')
+    other=draft(r,1)
+    with pytest.raises(sqlite3.IntegrityError),r.db.connection:
+        r.db.connection.execute('UPDATE OR REPLACE issued_documents SET id=? WHERE id=?',(d.id,other.id))
+    values=asdict(d);values.pop('id')
+    with pytest.raises(sqlite3.IntegrityError),r.db.connection:
+        r.db.connection.execute(f"UPDATE OR REPLACE issued_documents SET {','.join(k+'=?' for k in values)} WHERE id=?",(*values.values(),other.id))
+    independent=dict(values,training_id=other.training_id,full_name=other.full_name,completion_date=other.completion_date,
+        number='У-2020-0099',number_key='у-2020-0099',blank_number='',blank_key=None)
+    for collision in (dict(independent,number=d.number,number_key=d.number_key),
+                      dict(independent,blank_number=d.blank_number,blank_key=d.blank_key)):
+        with pytest.raises(sqlite3.IntegrityError),r.db.connection:
+            r.db.connection.execute(f"UPDATE OR REPLACE issued_documents SET {','.join(k+'=?' for k in collision)} WHERE id=?",(*collision.values(),other.id))
+    assert r.repo.load(d.id)==d and r.repo.load(other.id)==other
     assert hashlib.sha256(path.read_bytes()).hexdigest()==d.document_sha256
     orphan=path.parent/('issued-'+uuid4().hex+'.docx');orphan.write_bytes(path.read_bytes())
     assert r.repo.recover_unregistered()==1 and not orphan.exists()
