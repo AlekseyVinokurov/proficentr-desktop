@@ -85,6 +85,14 @@ def main() -> int:
                 for row in orders.search():
                     if row[-1] != "draft":
                         orders.verify_document(row[0])
+                issued = window.issued_documents_page.repository
+                for row in issued.search(state='registered'):
+                    issued.verify_document(row[0])
+                    for event in window.issued_documents_page.delivery.history(row[0]):
+                        for evidence in window.issued_documents_page.delivery.evidence(event.id):
+                            window.issued_documents_page.delivery.verify_evidence(evidence[0])
+                if issued.search(state='registered'):
+                    issued.export_xlsx('1900-01-01', '9999-12-31')
                 QTimer.singleShot(200, app.quit)
             return app.exec()
     except Exception as error:

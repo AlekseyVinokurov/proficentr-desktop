@@ -12,6 +12,7 @@ TRAINING_FIELDS = "start_date end_date state".split()
 ATTESTATION_FIELDS = "attestation_result grade qualification qualification_grade attestation_note".split()
 COMPLETION_FIELDS = "completion_date completion_basis protocol_number protocol_date attestation_date".split()
 SCHEMA = {
+    "issued": dict.fromkeys("kind number date blank_series blank_number completion_date completion_order_number completion_order_date qualification qualification_grade".split()),
     "completion": dict.fromkeys(("date", "basis")),
     "protocol": dict.fromkeys("number date attestation_date kind chair members note".split()),
     "order": dict.fromkeys(("kind", "student_count")),
@@ -77,6 +78,7 @@ def fictional_context():
     context['order'].update(kind='group', student_count=2)
     context['contract'].update(total_price='1200,50', payment_terms='Вымышленный порядок оплаты', currency='RUB', student_count=2)
     context['document'].update(is_draft=False, number='ТЕСТ — НЕ ЗАРЕГИСТРИРОВАН', date='2020-01-10', is_test=True)
+    context['issued'].update(kind='Удостоверение о повышении квалификации', number='ТЕСТ-У-2020-0001', date='2020-02-11', blank_series='', blank_number='', completion_date='2020-02-10', completion_order_number='ТЕСТ-О-2020-0001', completion_order_date='2020-02-10', qualification='', qualification_grade='')
     context['completion'].update(date='2020-02-10', basis='Протокол ТЕСТ-П-2020-0001 от 2020-02-10')
     context['protocol'].update(number='ТЕСТ-П-2020-0001', date='2020-02-10', attestation_date='2020-02-10', kind='Итоговая аттестация', chair='Председатель Примеров', members='Член комиссии Тестов')
     context['students'] = [dict(context['student'], start_date='2020-01-10', end_date='2020-02-10'),

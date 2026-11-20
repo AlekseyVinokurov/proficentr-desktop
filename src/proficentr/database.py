@@ -381,6 +381,88 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
      """CREATE TRIGGER completion_sequences_insert BEFORE INSERT ON completion_sequences
     WHEN EXISTS (SELECT 1 FROM completion_sequences WHERE year = NEW.year AND last_value > NEW.last_value)
     BEGIN SELECT RAISE(ABORT, 'Completion sequence cannot decrease'); END"""),
+    ("""CREATE TABLE issued_documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, training_id INTEGER NOT NULL REFERENCES training_completions(training_id),
+    kind TEXT NOT NULL CHECK (kind IN ('dpo_upskilling_certificate','dpo_retraining_diploma','po_profession_certificate')),
+    full_name TEXT NOT NULL, program_name TEXT NOT NULL, hours INTEGER NOT NULL CHECK (hours > 0),
+    direction TEXT NOT NULL, program_kind TEXT NOT NULL, qualification TEXT NOT NULL DEFAULT '', qualification_grade TEXT NOT NULL DEFAULT '',
+    completion_date TEXT NOT NULL, completion_order_id INTEGER NOT NULL REFERENCES completion_orders(id),
+    completion_order_number TEXT NOT NULL, completion_order_date TEXT NOT NULL,
+    document_date TEXT NOT NULL, historical_number TEXT NOT NULL DEFAULT '', blank_series TEXT NOT NULL DEFAULT '',
+    blank_number TEXT NOT NULL DEFAULT '', blank_key TEXT, template_id INTEGER REFERENCES document_templates(id),
+    state TEXT NOT NULL DEFAULT 'draft' CHECK (state IN ('draft','registered')), number TEXT, number_key TEXT,
+    document_path TEXT NOT NULL DEFAULT '', document_sha256 TEXT NOT NULL DEFAULT '', snapshot TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, registered_at TEXT NOT NULL DEFAULT '', revision INTEGER NOT NULL DEFAULT 1,
+    CHECK (document_date >= completion_date), CHECK ((number IS NULL) = (number_key IS NULL)),
+    CHECK ((direction='dpo' AND program_kind='dpo_upskilling' AND kind='dpo_upskilling_certificate') OR
+           (direction='dpo' AND program_kind='dpo_retraining' AND kind='dpo_retraining_diploma') OR
+           (direction='po' AND program_kind IN ('po_initial_training','po_retraining','po_upskilling') AND kind='po_profession_certificate')),
+    CHECK ((state='draft' AND number IS NULL AND blank_key IS NULL AND document_path='' AND registered_at='' AND snapshot='{}') OR
+           (state='registered' AND length(trim(number))>0 AND length(number_key)>0 AND template_id IS NOT NULL AND document_path!=''
+            AND length(document_sha256)=64 AND registered_at!='' AND snapshot!='{}')),
+    CHECK ((blank_number='' AND blank_key IS NULL) OR (blank_number!='' AND (state='draft' OR blank_key IS NOT NULL)))
+)""",
+     """CREATE UNIQUE INDEX issued_primary_training ON issued_documents(training_id) WHERE state='registered'""",
+     """CREATE UNIQUE INDEX issued_number_scope ON issued_documents(kind,number_key) WHERE state='registered'""",
+     """CREATE UNIQUE INDEX issued_blank_scope ON issued_documents(kind,blank_key) WHERE state='registered' AND blank_key IS NOT NULL""",
+     """CREATE TABLE issued_sequences (kind TEXT NOT NULL, year INTEGER NOT NULL, last_value INTEGER NOT NULL CHECK(last_value>0), PRIMARY KEY(kind,year))""",
+     """CREATE TABLE document_transfers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER NOT NULL REFERENCES issued_documents(id),
+    method TEXT NOT NULL CHECK(method IN ('personal','post','post_confirmation','email')), event_date TEXT NOT NULL,
+    recipient TEXT NOT NULL CHECK(length(trim(recipient))>0), confirmation TEXT NOT NULL DEFAULT '',
+    address TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', tracking_number TEXT NOT NULL DEFAULT '',
+    postal_status TEXT NOT NULL, received_date TEXT NOT NULL DEFAULT '', parent_event_id INTEGER,
+    medium TEXT NOT NULL CHECK(medium IN ('original','electronic_copy')), note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(id,document_id),
+    FOREIGN KEY(parent_event_id,document_id) REFERENCES document_transfers(id,document_id),
+    CHECK ((method='email' AND medium='electronic_copy' AND email!='' AND parent_event_id IS NULL AND received_date='' AND postal_status IN ('sent','confirmed')) OR
+           (method='personal' AND medium='original' AND confirmation!='' AND parent_event_id IS NULL AND received_date='' AND postal_status='confirmed') OR
+           (method='post' AND medium='original' AND address!='' AND parent_event_id IS NULL AND received_date='' AND postal_status IN ('sent','unconfirmed')) OR
+           (method='post_confirmation' AND medium='original' AND parent_event_id IS NOT NULL AND received_date!='' AND received_date<=event_date AND confirmation!='' AND postal_status='confirmed'))
+)""",
+     """CREATE UNIQUE INDEX postal_confirmation_once ON document_transfers(parent_event_id) WHERE method='post_confirmation'""",
+     """CREATE TABLE transfer_evidence (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, event_id INTEGER NOT NULL REFERENCES document_transfers(id),
+    relative_path TEXT NOT NULL UNIQUE, sha256 TEXT NOT NULL CHECK(length(sha256)=64),
+    evidence_type TEXT NOT NULL CHECK(length(trim(evidence_type))>0), format TEXT NOT NULL CHECK(format IN ('pdf','png','jpg')),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+)""",
+     """CREATE TRIGGER issued_insert BEFORE INSERT ON issued_documents WHEN NEW.state!='draft'
+    OR EXISTS (SELECT 1 FROM issued_documents WHERE id=NEW.id AND state='registered')
+    BEGIN SELECT RAISE(ABORT,'Create a draft first; registered documents are immutable'); END""",
+     """CREATE TRIGGER issued_immutable BEFORE UPDATE ON issued_documents WHEN OLD.state='registered'
+    BEGIN SELECT RAISE(ABORT,'Registered document is immutable'); END""",
+     """CREATE TRIGGER issued_no_delete BEFORE DELETE ON issued_documents WHEN OLD.state='registered'
+    BEGIN SELECT RAISE(ABORT,'Registered document cannot be deleted'); END""",
+     """CREATE TRIGGER issued_basis BEFORE INSERT ON issued_documents WHEN NOT EXISTS
+    (SELECT 1 FROM training_completions c JOIN completion_orders o ON o.id=c.order_id WHERE c.training_id=NEW.training_id
+        AND o.id=NEW.completion_order_id AND o.state='signed' AND c.completion_date=NEW.completion_date)
+    BEGIN SELECT RAISE(ABORT,'Confirmed completion required'); END""",
+     """CREATE TRIGGER issued_basis_update BEFORE UPDATE ON issued_documents WHEN NOT EXISTS
+    (SELECT 1 FROM training_completions c JOIN completion_orders o ON o.id=c.order_id WHERE c.training_id=NEW.training_id
+        AND o.id=NEW.completion_order_id AND o.state='signed' AND c.completion_date=NEW.completion_date)
+    BEGIN SELECT RAISE(ABORT,'Confirmed completion required'); END""",
+     """CREATE TRIGGER transfer_insert BEFORE INSERT ON document_transfers WHEN
+    (SELECT state FROM issued_documents WHERE id=NEW.document_id)!='registered'
+    OR NEW.event_date < (SELECT document_date FROM issued_documents WHERE id=NEW.document_id)
+    OR EXISTS(SELECT 1 FROM document_transfers WHERE id=NEW.id)
+    OR (NEW.method='post_confirmation' AND NOT EXISTS(SELECT 1 FROM document_transfers p WHERE p.id=NEW.parent_event_id
+        AND p.document_id=NEW.document_id AND p.method='post' AND NEW.received_date>=p.event_date))
+    BEGIN SELECT RAISE(ABORT,'Registered document and valid original postal event required'); END""",
+     """CREATE TRIGGER evidence_insert BEFORE INSERT ON transfer_evidence WHEN EXISTS(SELECT 1 FROM transfer_evidence WHERE id=NEW.id)
+    BEGIN SELECT RAISE(ABORT,'Evidence cannot be replaced'); END""",
+     """CREATE TRIGGER transfers_no_update BEFORE UPDATE ON document_transfers BEGIN SELECT RAISE(ABORT,'History is append only'); END""",
+     """CREATE TRIGGER transfers_no_delete BEFORE DELETE ON document_transfers BEGIN SELECT RAISE(ABORT,'History is append only'); END""",
+     """CREATE TRIGGER evidence_no_update BEFORE UPDATE ON transfer_evidence BEGIN SELECT RAISE(ABORT,'History is append only'); END""",
+     """CREATE TRIGGER evidence_no_delete BEFORE DELETE ON transfer_evidence BEGIN SELECT RAISE(ABORT,'History is append only'); END""",
+     """CREATE TRIGGER issued_sequences_no_delete BEFORE DELETE ON issued_sequences
+    BEGIN SELECT RAISE(ABORT,'Sequence cannot be deleted'); END""",
+     """CREATE TRIGGER issued_sequences_no_decrease BEFORE UPDATE ON issued_sequences WHEN
+    NEW.kind!=OLD.kind OR NEW.year!=OLD.year OR NEW.last_value<OLD.last_value
+    BEGIN SELECT RAISE(ABORT,'Sequence cannot decrease'); END""",
+     """CREATE TRIGGER issued_sequences_insert BEFORE INSERT ON issued_sequences WHEN
+    EXISTS(SELECT 1 FROM issued_sequences WHERE kind=NEW.kind AND year=NEW.year AND last_value>NEW.last_value)
+    BEGIN SELECT RAISE(ABORT,'Sequence cannot decrease'); END"""),
 )
 
 

@@ -21,6 +21,9 @@ from proficentr.training_repository import TrainingRepository
 from proficentr.trainings import TrainingGroup, Training
 from proficentr.document_templates import TemplateRepository
 from proficentr.contract_repository import ContractRepository
+from proficentr.issued_documents import IssuedDocument, TransferEvent
+from proficentr.issued_repository import IssuedDocumentRepository
+from proficentr.document_delivery import DeliveryRepository
 from proficentr.completion_orders import CompletionOrder, CompletionEntry
 from proficentr.completion_repository import CompletionRepository
 from proficentr.attestations import AttestationProtocol, AttestationResult
@@ -162,6 +165,29 @@ def main():
             completion_sequence = db.connection.execute('SELECT * FROM completion_sequences').fetchall()
             completion_template_bytes = (storage.root / completion_template.relative_path).read_bytes()
             individual_training = TrainingRepository(db.connection).load(individual_training.id)
+        sample_docx = Document()
+        sample_docx.add_paragraph('{{ issued.kind }} {{ issued.number }} {{ issued.date }} {{ student.full_name }} {{ program.name }}')
+        sample_docx.add_paragraph('{{ issued.blank_series }} {{ issued.blank_number }} {{ issued.completion_order_number }} {{ issued.completion_date }}')
+        sample_docx.save(source_template)
+        from PySide6.QtGui import QImage, QColor
+        evidence_source = root / 'synthetic-evidence.png'
+        image = QImage(2, 2, QImage.Format.Format_RGB32); image.fill(QColor('red'))
+        assert image.save(str(evidence_source), 'PNG')
+        with Database(storage.database_path) as db:
+            issued = IssuedDocumentRepository(db.connection, storage)
+            issued_template = issued.templates.register(source_template, 'dpo_upskilling_certificate', 'synthetic', 'Synthetic issued certificate')
+            issued_document = issued.save(IssuedDocument(training_id=individual_training.id, document_date='2020-03-04', blank_series='TEST', blank_number='0001'))
+            issued_document = issued.register(issued_document.id, issued.prepare(issued_document.id).signature)
+            issued_bytes = issued.verify_document(issued_document.id).read_bytes()
+            issued_sequence = db.connection.execute('SELECT * FROM issued_sequences').fetchall()
+            issued_template_bytes = (storage.root / issued_template.relative_path).read_bytes()
+            delivery = DeliveryRepository(issued)
+            email_event = delivery.add(TransferEvent(document_id=issued_document.id, method='email', event_date='2020-03-05', recipient='Synthetic recipient', email='synthetic@example.test'))
+            post_event = delivery.add(TransferEvent(document_id=issued_document.id, method='post', event_date='2020-03-05', recipient='Synthetic recipient', address='Synthetic postal address', tracking_number='SYNTHETIC-TRACK'))
+            delivery.add(TransferEvent(document_id=issued_document.id, method='post_confirmation', event_date='2020-03-07', parent_event_id=post_event.id, received_date='2020-03-06', confirmation='Synthetic receipt'), evidence=evidence_source)
+            transfer_history = delivery.history(issued_document.id)
+            evidence_records = db.connection.execute('SELECT id,event_id,relative_path,sha256 FROM transfer_evidence').fetchall()
+            evidence_bytes = {row[0]: delivery.verify_evidence(row[0]).read_bytes() for row in evidence_records}
         settings.save_directory(storage.root)
         (storage.root/'attachments'/'synthetic.txt').write_text('preserve me')
         config_before=settings.config_file().read_bytes()
@@ -267,6 +293,21 @@ def main():
                     pass
                 else:
                     raise AssertionError('Duplicate completion accepted after update')
+                issued = IssuedDocumentRepository(db.connection, storage)
+                assert issued.load(issued_document.id) == issued_document
+                assert issued.verify_document(issued_document.id).read_bytes() == issued_bytes
+                assert issued.templates.load(issued_template.id) == issued_template
+                assert (storage.root / issued_template.relative_path).read_bytes() == issued_template_bytes
+                assert db.connection.execute('SELECT * FROM issued_sequences').fetchall() == issued_sequence
+                delivery = DeliveryRepository(issued)
+                assert delivery.history(issued_document.id) == transfer_history
+                assert db.connection.execute('SELECT id,event_id,relative_path,sha256 FROM transfer_evidence').fetchall() == evidence_records
+                for evidence_id, data in evidence_bytes.items():
+                    assert delivery.verify_evidence(evidence_id).read_bytes() == data
+                assert '2020-03-06' in issued.delivery_summary(issued_document.id)[0]
+                assert issued.export_xlsx('2020-01-01', '2020-12-31').is_file()
+                assert issued.draft_for(individual_training.id).id == issued_document.id
+                assert list((storage.root / 'exports' / 'issued-registers').glob('*.xlsx'))
                 package, warnings = orders.prepare_package(registered_order.id)
                 assert (package / 'Приказ.docx').is_file()
                 assert len(list(package.glob('*.docx'))) == 2

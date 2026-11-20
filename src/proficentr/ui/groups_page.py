@@ -48,6 +48,7 @@ class TrainingList(QWidget):
     order_requested = Signal(object, object)
     attestation_requested = Signal(object, object)
     completion_requested = Signal(object, object)
+    issuance_requested = Signal(object, object)
 
     def __init__(self, repository, *, group_id=None, attestations=None, parent=None):
         super().__init__(parent)
@@ -86,7 +87,9 @@ class TrainingList(QWidget):
         self.attestation_button.clicked.connect(lambda: self.attestation_requested.emit([selected_id(self.table)] if selected_id(self.table) else [], self.group_id))
         self.completion_button = QPushButton("Завершение обучения")
         self.completion_button.clicked.connect(lambda: self.completion_requested.emit([selected_id(self.table)] if selected_id(self.table) else [], self.group_id))
-        documents.addWidget(self.contract_button); documents.addWidget(self.order_button); documents.addWidget(self.attestation_button); documents.addWidget(self.completion_button)
+        self.issued_button = QPushButton("Выпускные документы")
+        self.issued_button.clicked.connect(lambda: self.issuance_requested.emit([selected_id(self.table)] if selected_id(self.table) else [], self.group_id))
+        documents.addWidget(self.contract_button); documents.addWidget(self.order_button); documents.addWidget(self.attestation_button); documents.addWidget(self.completion_button); documents.addWidget(self.issued_button)
         layout.addLayout(documents)
         self.table = make_table(("ФИО", "Программа (снимок)", "Начало", "Окончание", "Состояние", "Подтверждённая аттестация", "Основание"))
         self.table.cellDoubleClicked.connect(lambda: self.open_selected())
@@ -106,6 +109,7 @@ class TrainingList(QWidget):
         training_id = selected_id(self.table)
         self.open_button.setEnabled(training_id is not None)
         self.attestation_button.setEnabled(bool(training_id and self.table.item(self.table.currentRow(),4).text() == STATES["enrolled"]))
+        self.issued_button.setEnabled(bool(training_id and self.table.item(self.table.currentRow(),4).text() == STATES["completed"]))
         self.completion_button.setEnabled(bool(training_id and self.table.item(self.table.currentRow(),4).text() == STATES["enrolled"]))
         item = self.table.item(self.table.currentRow(), 4) if training_id else None
         self.exclude_button.setEnabled(bool(item and item.text() == STATES[PREPARATION]))
@@ -199,6 +203,7 @@ class GroupsPage(QWidget):
     order_requested = Signal(object, object)
     attestation_requested = Signal(object, object)
     completion_requested = Signal(object, object)
+    issuance_requested = Signal(object, object)
 
     def __init__(self, repository, *, attestations=None):
         super().__init__()
@@ -239,7 +244,9 @@ class GroupsPage(QWidget):
         self.attestation_button.clicked.connect(lambda: self.attestation_requested.emit([], selected_id(self.table)))
         self.completion_button = QPushButton("Завершение обучения")
         self.completion_button.clicked.connect(lambda: self.completion_requested.emit([], selected_id(self.table)))
-        documents.addWidget(self.contract_button); documents.addWidget(self.order_button); documents.addWidget(self.attestation_button); documents.addWidget(self.completion_button)
+        self.issued_button = QPushButton("Выпускные документы")
+        self.issued_button.clicked.connect(lambda: self.issuance_requested.emit([], selected_id(self.table)))
+        documents.addWidget(self.contract_button); documents.addWidget(self.order_button); documents.addWidget(self.attestation_button); documents.addWidget(self.completion_button); documents.addWidget(self.issued_button)
         content.addLayout(documents)
         self.table = make_table(("Группа", "Программа", "Начало", "Окончание", "Состояние"))
         self.table.cellDoubleClicked.connect(lambda: self.open_selected())
@@ -253,6 +260,7 @@ class GroupsPage(QWidget):
         self.individual.order_requested.connect(self.order_requested.emit)
         self.individual.attestation_requested.connect(self.attestation_requested.emit)
         self.individual.completion_requested.connect(self.completion_requested.emit)
+        self.individual.issuance_requested.connect(self.issuance_requested.emit)
         self.tabs.addTab(self.individual, "Индивидуальное обучение")
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
@@ -271,7 +279,7 @@ class GroupsPage(QWidget):
 
     def selection_changed(self):
         record_id = selected_id(self.table)
-        for button in (self.open_button, self.members_button, self.archive_button, self.contract_button, self.order_button, self.attestation_button, self.completion_button):
+        for button in (self.open_button, self.members_button, self.archive_button, self.contract_button, self.order_button, self.attestation_button, self.completion_button, self.issued_button):
             button.setEnabled(record_id is not None)
         item = self.table.item(self.table.currentRow(), 4) if record_id else None
         self.archive_button.setText("Вернуть в активные" if item and item.text() == "Архивная" else "В архив")
@@ -334,6 +342,10 @@ class GroupsPage(QWidget):
                 dialog.accept()
                 self.completion_requested.emit(training_ids, selected_group_id)
             members.completion_requested.connect(create_completion)
+            def create_issued(training_ids, selected_group_id):
+                dialog.accept()
+                self.issuance_requested.emit(training_ids, selected_group_id)
+            members.issuance_requested.connect(create_issued)
             layout.addWidget(members)
             close = QPushButton("Закрыть")
             close.clicked.connect(dialog.accept)

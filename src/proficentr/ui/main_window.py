@@ -21,6 +21,8 @@ from proficentr.contract_repository import ContractRepository
 from proficentr.ui.contracts_page import ContractsPage
 from proficentr.attestation_repository import AttestationRepository
 from proficentr.ui.attestations_page import AttestationsPage
+from proficentr.issued_repository import IssuedDocumentRepository
+from proficentr.ui.issued_documents_page import IssuedDocumentsPage
 from proficentr.completion_repository import CompletionRepository
 from proficentr.ui.completion_orders_page import CompletionOrdersPage
 from proficentr.enrollment_order_repository import EnrollmentOrderRepository
@@ -71,11 +73,13 @@ class MainWindow(QMainWindow):
                 self.orders_page = EnrollmentOrdersPage(EnrollmentOrderRepository(database.connection, storage or Storage(root)) if database else None)
                 self.attestations_page = AttestationsPage(AttestationRepository(database.connection, storage or Storage(root)) if database else None)
                 self.completion_orders_page = CompletionOrdersPage(CompletionRepository(database.connection, storage or Storage(root)) if database else None)
+                self.issued_documents_page = IssuedDocumentsPage(IssuedDocumentRepository(database.connection, storage or Storage(root)) if database else None)
                 self.documents_page = QTabWidget()
                 self.documents_page.addTab(self.contracts_page, "Договоры")
                 self.documents_page.addTab(self.orders_page, "Приказы о зачислении")
                 self.documents_page.addTab(self.attestations_page, "Протоколы аттестации")
                 self.documents_page.addTab(self.completion_orders_page, "Приказы о завершении")
+                self.documents_page.addTab(self.issued_documents_page, "Выпускные документы")
                 self.pages.addWidget(self.documents_page)
                 continue
             if section == "Настройки":
@@ -111,6 +115,8 @@ class MainWindow(QMainWindow):
         self.groups_page.order_requested.connect(self._create_order)
         self.groups_page.attestation_requested.connect(self._create_attestation)
         self.groups_page.completion_requested.connect(self._create_completion)
+        self.groups_page.issuance_requested.connect(self._create_issued)
+        self.issued_documents_page.templates_requested.connect(self._open_templates)
         self.completion_orders_page.templates_requested.connect(self._open_templates)
 
     def _create_contract(self, training_ids, group_id):
@@ -121,6 +127,11 @@ class MainWindow(QMainWindow):
     def _open_templates(self):
         self.navigation.setCurrentRow(SECTIONS.index("Настройки"))
         self.settings_page.tabs.setCurrentWidget(self.settings_page.templates_page)
+
+    def _create_issued(self, training_ids, group_id):
+        self.navigation.setCurrentRow(SECTIONS.index("Документы"))
+        self.documents_page.setCurrentWidget(self.issued_documents_page)
+        self.issued_documents_page.open_training(training_ids=training_ids, group_id=group_id)
 
     def _create_completion(self, training_ids, group_id):
         self.navigation.setCurrentRow(SECTIONS.index("Документы"))

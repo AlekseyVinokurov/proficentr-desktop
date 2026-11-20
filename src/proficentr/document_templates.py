@@ -20,6 +20,9 @@ DOCUMENT_TYPES = {
     'completion_order': 'Приказ о завершении',
     'protocol_dpo': 'Протокол ДПО',
     'protocol_po': 'Протокол ПО',
+    'dpo_upskilling_certificate': 'Удостоверение о повышении квалификации',
+    'dpo_retraining_diploma': 'Диплом о профессиональной переподготовке',
+    'po_profession_certificate': 'Свидетельство о профессии рабочего, должности служащего',
     'other': 'Другой документ',
 }
 
