@@ -74,6 +74,32 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
                (direction = 'po' AND kind IN ('po_initial_training', 'po_retraining', 'po_upskilling')))
     )""",
      "CREATE INDEX programs_active_direction_idx ON programs(active, direction)"),
+    ("""CREATE TABLE training_groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+        program_id INTEGER NOT NULL REFERENCES programs(id),
+        start_date TEXT NOT NULL, end_date TEXT NOT NULL CHECK (end_date >= start_date),
+        note TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+        UNIQUE (id, program_id)
+    )""",
+     """CREATE TABLE trainings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER NOT NULL REFERENCES students(id),
+        program_id INTEGER NOT NULL REFERENCES programs(id),
+        group_id INTEGER,
+        start_date TEXT NOT NULL, end_date TEXT NOT NULL CHECK (end_date >= start_date),
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        state TEXT NOT NULL DEFAULT 'preparation' CHECK (state IN ('preparation', 'excluded')),
+        note TEXT NOT NULL DEFAULT '', program_snapshot TEXT NOT NULL,
+        CHECK (state != 'excluded' OR group_id IS NOT NULL),
+        FOREIGN KEY (group_id, program_id) REFERENCES training_groups(id, program_id)
+            DEFERRABLE INITIALLY DEFERRED
+    )""",
+     "CREATE INDEX training_groups_program_idx ON training_groups(program_id)",
+     "CREATE INDEX trainings_group_idx ON trainings(group_id)",
+     "CREATE INDEX trainings_program_idx ON trainings(program_id)",
+     "CREATE INDEX trainings_student_dates_idx ON trainings(student_id, start_date, end_date)",
+     "CREATE UNIQUE INDEX trainings_group_student_idx ON trainings(group_id, student_id) WHERE state = 'preparation'"),
 )
 
 

@@ -17,6 +17,8 @@ from proficentr.counterparties import Counterparty
 from proficentr.counterparty_repository import CounterpartyRepository
 from proficentr.programs import Program
 from proficentr.program_repository import ProgramRepository
+from proficentr.training_repository import TrainingRepository
+from proficentr.trainings import TrainingGroup, Training
 
 
 def wait_file(path, process, seconds=120):
@@ -48,6 +50,17 @@ def main():
             programs = ProgramRepository(db.connection)
             active_program = programs.save(Program(full_name='Synthetic DPO program', direction='dpo', kind='dpo_upskilling', hours=72))
             archived_program = programs.save(Program(full_name='Synthetic PO program', direction='po', kind='po_retraining', hours=144, active=False, edition='old'))
+        with Database(storage.database_path) as db:
+            trainings = TrainingRepository(db.connection)
+            active_group = trainings.save_group(TrainingGroup(name='Synthetic active group', program_id=active_program.id,
+                                                               start_date='2020-01-01', end_date='2020-02-01'))
+            archived_group = trainings.save_group(TrainingGroup(name='Synthetic archived group', program_id=active_program.id,
+                                                                 start_date='2019-01-01', end_date='2019-02-01'))
+            group_training = trainings.add_students(active_group.id, [1])[0]
+            archived_training = trainings.add_students(archived_group.id, [1])[0]
+            archived_group = trainings.set_active(archived_group.id, False)
+            individual_training = trainings.save(Training(student_id=1, program_id=active_program.id,
+                                                          start_date='2018-01-01', end_date='2018-02-01'))
         settings.save_directory(storage.root)
         (storage.root/'attachments'/'synthetic.txt').write_text('preserve me')
         config_before=settings.config_file().read_bytes()
@@ -93,6 +106,12 @@ def main():
                 assert CounterpartyRepository(db.connection).load(counterparty.id) == counterparty
                 assert ProgramRepository(db.connection).search() == [active_program]
                 assert ProgramRepository(db.connection).load(archived_program.id) == archived_program
+                trainings = TrainingRepository(db.connection)
+                assert trainings.load_group(active_group.id) == active_group
+                assert trainings.load_group(archived_group.id) == archived_group
+                for training in (group_training, archived_training, individual_training):
+                    assert trainings.load(training.id) == training
+                assert db.connection.execute('PRAGMA foreign_key_check').fetchall() == []
         finally:
             if new_pid:subprocess.run(['taskkill','/PID',str(new_pid),'/T','/F'],check=False,capture_output=True)
             if helper_process.poll() is None:helper_process.kill();helper_process.wait()

@@ -163,7 +163,7 @@ def test_migration_five_preserves_existing_registers_and_backup(tmp_path,monkeyp
             assert CounterpartyRepository(db.connection).load(customer.id)==customer
             assert db.connection.execute('SELECT full_name FROM training_center').fetchone()==('Тестовый центр',)
             assert db.connection.execute('SELECT * FROM schema_migrations WHERE version<=4').fetchall()==stamps
-            assert db.connection.execute('SELECT max(version) FROM schema_migrations').fetchone()==(5,)
+            assert db.connection.execute('SELECT max(version) FROM schema_migrations').fetchone()==(len(migrations),)
             repo=ProgramRepository(db.connection)
             if not repo.search():saved=repo.save(sample())
             assert repo.load(saved.id)==saved
