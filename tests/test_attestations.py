@@ -274,14 +274,15 @@ def test_migration10_preserves_existing_v9_and_backup(attestations,tmp_path,monk
         # An actual version 9 database with a signed order and its protected enrollment.
         r.db.connection.backup(old.connection)
         with old.connection:
-            for name, in old.connection.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'attestation%'").fetchall(): old.connection.execute(f'DROP TRIGGER {name}')
+            for name, in old.connection.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND (name LIKE 'attestation%' OR name LIKE 'completion%')").fetchall(): old.connection.execute(f'DROP TRIGGER {name}')
+            for table in ('training_completions','completion_order_trainings','completion_orders','completion_sequences'): old.connection.execute(f'DROP TABLE IF EXISTS {table}')
             for table in ('attestation_results','attestation_protocols','attestation_sequences'): old.connection.execute(f'DROP TABLE {table}')
-            old.connection.execute('DELETE FROM schema_migrations WHERE version=10')
+            old.connection.execute('DELETE FROM schema_migrations WHERE version>=10')
         tables=[row[0] for row in old.connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
         before={table:old.connection.execute(f'SELECT * FROM {table}').fetchall() for table in tables}
     monkeypatch.setattr(db_module,'MIGRATIONS',all_migrations)
     with Database(path) as upgraded:
-        assert upgraded.connection.execute('SELECT max(version) FROM schema_migrations').fetchone()==(10,)
+        assert upgraded.connection.execute('SELECT max(version) FROM schema_migrations').fetchone()==(len(all_migrations),)
         for table in tables:
             if table!='schema_migrations': assert upgraded.connection.execute(f'SELECT * FROM {table}').fetchall()==before[table]
         assert upgraded.connection.execute('PRAGMA integrity_check').fetchall()==[('ok',)]

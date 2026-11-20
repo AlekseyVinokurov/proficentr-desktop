@@ -7,7 +7,8 @@ from proficentr.students import iso_date
 PREPARATION = "preparation"
 EXCLUDED = "excluded"
 ENROLLED = "enrolled"
-STATES = {ENROLLED: "Зачислен", PREPARATION: "Подготовка", EXCLUDED: "Исключён из состава (подготовка)"}
+COMPLETED = "completed"
+STATES = {COMPLETED: "Завершён", ENROLLED: "Зачислен", PREPARATION: "Подготовка", EXCLUDED: "Исключён из состава (подготовка)"}
 
 
 @dataclass(repr=False)

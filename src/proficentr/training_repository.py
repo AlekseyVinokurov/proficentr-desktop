@@ -8,7 +8,7 @@ import sqlite3
 from proficentr.program_repository import ProgramRepository, ProgramRepositoryError
 from proficentr.students import is_adult, iso_date
 from proficentr.trainings import (
-    ENROLLED, EXCLUDED, PREPARATION, Training, TrainingGroup, validate_group, validate_training,
+    COMPLETED, ENROLLED, EXCLUDED, PREPARATION, Training, TrainingGroup, validate_group, validate_training,
 )
 
 GROUP_FIELDS = tuple(asdict(TrainingGroup()))
@@ -37,6 +37,7 @@ class TrainingRepository:
         self.connection = connection
         self.programs = ProgramRepository(connection)
         self.has_enrollments = bool(connection.execute("SELECT 1 FROM sqlite_master WHERE name = 'training_enrollments'").fetchone())
+        self.has_completions = bool(connection.execute("SELECT 1 FROM sqlite_master WHERE name = 'training_completions'").fetchone())
         connection.create_function("training_fold", 1, lambda value: " ".join(value.split()).casefold(), deterministic=True)
 
     @contextmanager
@@ -71,6 +72,8 @@ class TrainingRepository:
         record = self._load("trainings", TRAINING_FIELDS, Training, training_id)
         if self.has_enrollments and self.connection.execute("SELECT 1 FROM training_enrollments WHERE training_id = ?", (training_id,)).fetchone():
             record = replace(record, state=ENROLLED)
+        if self.has_completions and self.connection.execute("SELECT 1 FROM training_completions WHERE training_id = ?", (training_id,)).fetchone():
+            record = replace(record, state=COMPLETED)
         return record
 
     def _write(self, table, fields, record):
@@ -216,7 +219,8 @@ class TrainingRepository:
             return self.connection.execute(
                 "SELECT t.id, s.surname || ' ' || s.first_name || ' ' || s.patronymic, "
                 "t.program_snapshot, t.start_date, t.end_date, "  # nosec B608 # Fixed state projections; bound parameters.
-                + ("CASE WHEN EXISTS (SELECT 1 FROM training_enrollments e WHERE e.training_id = t.id) THEN 'enrolled' ELSE t.state END " if self.has_enrollments else "t.state ")
+                + ("CASE WHEN EXISTS (SELECT 1 FROM training_completions c WHERE c.training_id = t.id) THEN 'completed' WHEN EXISTS (SELECT 1 FROM training_enrollments e WHERE e.training_id = t.id) THEN 'enrolled' ELSE t.state END " if self.has_completions else
+                   "CASE WHEN EXISTS (SELECT 1 FROM training_enrollments e WHERE e.training_id = t.id) THEN 'enrolled' ELSE t.state END " if self.has_enrollments else "t.state ")
                 +
                 "FROM trainings t JOIN students s ON s.id = t.student_id "
                 "WHERE ((? IS NULL AND t.group_id IS NULL) OR t.group_id = ?) "

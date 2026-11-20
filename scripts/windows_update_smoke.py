@@ -21,6 +21,8 @@ from proficentr.training_repository import TrainingRepository
 from proficentr.trainings import TrainingGroup, Training
 from proficentr.document_templates import TemplateRepository
 from proficentr.contract_repository import ContractRepository
+from proficentr.completion_orders import CompletionOrder, CompletionEntry
+from proficentr.completion_repository import CompletionRepository
 from proficentr.attestations import AttestationProtocol, AttestationResult
 from proficentr.attestation_repository import AttestationRepository
 from proficentr.enrollment_orders import EnrollmentOrder
@@ -142,6 +144,24 @@ def main():
             protocol_results = {p.id: protocols.results(p.id) for p in saved_protocols}
             protocol_sequence = db.connection.execute('SELECT * FROM attestation_sequences').fetchall()
             protocol_template_bytes = (storage.root / protocol_template.relative_path).read_bytes()
+        sample_docx = Document()
+        sample_docx.add_paragraph('{{ document.number }} {{ document.date }} {{ completion.date }}')
+        sample_docx.add_paragraph('{% for row in students %}{{ row.full_name }} {{ row.completion_date }} {{ row.protocol_number }} {{ row.attestation_result }}{% endfor %}')
+        sample_docx.save(source_template)
+        with Database(storage.database_path) as db:
+            completions = CompletionRepository(db.connection, storage)
+            completion_template = completions.templates.register(source_template, 'completion_order', 'dpo-individual', 'Synthetic completion order')
+            completion_orders = []
+            for day in ('2020-03-02', '2020-03-03'):
+                order = completions.save(CompletionOrder(order_date=day), [CompletionEntry(individual_training.id, '2020-03-01')])
+                completion_orders.append(completions.register(order.id, completions.prepare(order.id).signature))
+            completion_orders[0] = completions.confirm_signing(completion_orders[0].id, signed_date='2020-03-02', confirmed_by='Synthetic responsible', conditions_checked=True)
+            completion_files = {order.id: completions.verify_document(order.id).read_bytes() for order in completion_orders}
+            completion_entries = {order.id: completions.entries(order.id) for order in completion_orders}
+            completion_fact = completions.completion(individual_training.id)
+            completion_sequence = db.connection.execute('SELECT * FROM completion_sequences').fetchall()
+            completion_template_bytes = (storage.root / completion_template.relative_path).read_bytes()
+            individual_training = TrainingRepository(db.connection).load(individual_training.id)
         settings.save_directory(storage.root)
         (storage.root/'attachments'/'synthetic.txt').write_text('preserve me')
         config_before=settings.config_file().read_bytes()
@@ -221,7 +241,7 @@ def main():
                     assert (storage.root / relative_path).read_bytes() == data
                 assert orders.training_ids(registered_order.id) == [group_training.id]
                 assert orders.training_ids(signed_order.id) == [individual_training.id]
-                assert trainings.load(individual_training.id).state == 'enrolled'
+                assert trainings.load(individual_training.id).state == 'completed'
                 assert db.connection.execute('SELECT order_id FROM training_enrollments WHERE training_id=?', (individual_training.id,)).fetchone() == (signed_order.id,)
                 protocols = AttestationRepository(db.connection, storage)
                 for p in saved_protocols:
@@ -232,6 +252,21 @@ def main():
                 assert protocols.templates.load(protocol_template.id) == protocol_template
                 assert (storage.root / protocol_template.relative_path).read_bytes() == protocol_template_bytes
                 assert db.connection.execute('SELECT * FROM attestation_sequences').fetchall() == protocol_sequence
+                completions = CompletionRepository(db.connection, storage)
+                for order in completion_orders:
+                    assert completions.load(order.id) == order
+                    assert completions.entries(order.id) == completion_entries[order.id]
+                    assert completions.verify_document(order.id).read_bytes() == completion_files[order.id]
+                assert completions.completion(individual_training.id) == completion_fact
+                assert completions.templates.load(completion_template.id) == completion_template
+                assert (storage.root / completion_template.relative_path).read_bytes() == completion_template_bytes
+                assert db.connection.execute('SELECT * FROM completion_sequences').fetchall() == completion_sequence
+                try:
+                    completions.confirm_signing(completion_orders[1].id, signed_date='2020-03-03', confirmed_by='Synthetic responsible', conditions_checked=True)
+                except ValueError:
+                    pass
+                else:
+                    raise AssertionError('Duplicate completion accepted after update')
                 package, warnings = orders.prepare_package(registered_order.id)
                 assert (package / 'Приказ.docx').is_file()
                 assert len(list(package.glob('*.docx'))) == 2

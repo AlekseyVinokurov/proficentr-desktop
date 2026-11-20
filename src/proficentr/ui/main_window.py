@@ -21,6 +21,8 @@ from proficentr.contract_repository import ContractRepository
 from proficentr.ui.contracts_page import ContractsPage
 from proficentr.attestation_repository import AttestationRepository
 from proficentr.ui.attestations_page import AttestationsPage
+from proficentr.completion_repository import CompletionRepository
+from proficentr.ui.completion_orders_page import CompletionOrdersPage
 from proficentr.enrollment_order_repository import EnrollmentOrderRepository
 from proficentr.ui.enrollment_orders_page import EnrollmentOrdersPage
 
@@ -37,6 +39,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Proficentr Desktop")
         self.resize(1080, 700)
         self.setMinimumSize(760, 480)
+        root = database_path.parent.parent if database_path.parent.name == "database" else database_path.parent
+        self.attestation_repository = AttestationRepository(database.connection, storage or Storage(root)) if database else None
         container = QWidget()
         layout = QHBoxLayout(container)
         self.navigation = QListWidget()
@@ -58,7 +62,7 @@ class MainWindow(QMainWindow):
                 self.pages.addWidget(self.programs_page)
                 continue
             if section == "Группы":
-                self.groups_page = GroupsPage(TrainingRepository(database.connection) if database else None)
+                self.groups_page = GroupsPage(TrainingRepository(database.connection) if database else None, attestations=self.attestation_repository)
                 self.pages.addWidget(self.groups_page)
                 continue
             if section == "Документы":
@@ -66,10 +70,12 @@ class MainWindow(QMainWindow):
                 self.contracts_page = ContractsPage(ContractRepository(database.connection, storage or Storage(root)) if database else None)
                 self.orders_page = EnrollmentOrdersPage(EnrollmentOrderRepository(database.connection, storage or Storage(root)) if database else None)
                 self.attestations_page = AttestationsPage(AttestationRepository(database.connection, storage or Storage(root)) if database else None)
+                self.completion_orders_page = CompletionOrdersPage(CompletionRepository(database.connection, storage or Storage(root)) if database else None)
                 self.documents_page = QTabWidget()
                 self.documents_page.addTab(self.contracts_page, "Договоры")
                 self.documents_page.addTab(self.orders_page, "Приказы о зачислении")
                 self.documents_page.addTab(self.attestations_page, "Протоколы аттестации")
+                self.documents_page.addTab(self.completion_orders_page, "Приказы о завершении")
                 self.pages.addWidget(self.documents_page)
                 continue
             if section == "Настройки":
@@ -104,11 +110,22 @@ class MainWindow(QMainWindow):
         self.groups_page.contract_requested.connect(self._create_contract)
         self.groups_page.order_requested.connect(self._create_order)
         self.groups_page.attestation_requested.connect(self._create_attestation)
+        self.groups_page.completion_requested.connect(self._create_completion)
+        self.completion_orders_page.templates_requested.connect(self._open_templates)
 
     def _create_contract(self, training_ids, group_id):
         self.navigation.setCurrentRow(SECTIONS.index("Документы"))
         self.documents_page.setCurrentWidget(self.contracts_page)
         self.contracts_page.open_card(training_ids=training_ids, group_id=group_id)
+
+    def _open_templates(self):
+        self.navigation.setCurrentRow(SECTIONS.index("Настройки"))
+        self.settings_page.tabs.setCurrentWidget(self.settings_page.templates_page)
+
+    def _create_completion(self, training_ids, group_id):
+        self.navigation.setCurrentRow(SECTIONS.index("Документы"))
+        self.documents_page.setCurrentWidget(self.completion_orders_page)
+        self.completion_orders_page.open_card(training_ids=training_ids, group_id=group_id)
 
     def _create_attestation(self, training_ids, group_id):
         self.navigation.setCurrentRow(SECTIONS.index("Документы"))

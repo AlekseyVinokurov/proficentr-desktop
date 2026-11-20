@@ -296,6 +296,91 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
         WHEN (SELECT state FROM attestation_protocols WHERE id = OLD.protocol_id) != 'draft'
           OR (SELECT state FROM attestation_protocols WHERE id = NEW.protocol_id) != 'draft'
         BEGIN SELECT RAISE(ABORT, 'Registered results are immutable'); END"""),
+    ("""CREATE TABLE completion_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, order_date TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('individual','group')), group_id INTEGER REFERENCES training_groups(id),
+    direction TEXT NOT NULL CHECK (direction IN ('dpo','po')),
+    historical_number TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', template_id INTEGER REFERENCES document_templates(id),
+    state TEXT NOT NULL DEFAULT 'draft' CHECK (state IN ('draft','registered','signed')),
+    number TEXT, number_key TEXT UNIQUE, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    registered_at TEXT NOT NULL DEFAULT '', document_path TEXT NOT NULL DEFAULT '', document_sha256 TEXT NOT NULL DEFAULT '',
+    snapshot TEXT NOT NULL DEFAULT '{}', signed_date TEXT NOT NULL DEFAULT '', confirmed_at TEXT NOT NULL DEFAULT '',
+    confirmed_by TEXT NOT NULL DEFAULT '', conditions_checked INTEGER NOT NULL DEFAULT 0 CHECK (conditions_checked IN (0,1)),
+    revision INTEGER NOT NULL DEFAULT 1, UNIQUE (id,state),
+    CHECK ((kind = 'individual' AND group_id IS NULL) OR (kind = 'group' AND group_id IS NOT NULL)),
+    CHECK ((number IS NULL) = (number_key IS NULL)),
+    CHECK ((state = 'draft' AND number IS NULL AND registered_at = '' AND document_path = '' AND snapshot = '{}') OR
+           (state != 'draft' AND length(trim(number)) > 0 AND length(number_key) > 0 AND registered_at != ''
+            AND template_id IS NOT NULL AND document_path != '' AND length(document_sha256) = 64 AND snapshot != '{}')),
+    CHECK ((state != 'signed' AND signed_date = '' AND confirmed_at = '' AND confirmed_by = '' AND conditions_checked = 0) OR
+           (state = 'signed' AND signed_date >= order_date AND confirmed_at != '' AND length(trim(confirmed_by)) > 0 AND conditions_checked = 1))
+)""",
+     """CREATE TABLE completion_order_trainings (
+    order_id INTEGER NOT NULL REFERENCES completion_orders(id), training_id INTEGER NOT NULL REFERENCES training_enrollments(training_id),
+    position INTEGER NOT NULL CHECK (position >= 0), completion_date TEXT NOT NULL,
+    protocol_id INTEGER NOT NULL, basis_snapshot TEXT NOT NULL CHECK (basis_snapshot != '{}'),
+    PRIMARY KEY (order_id,training_id), UNIQUE (order_id,position),
+    UNIQUE (order_id,training_id,protocol_id,completion_date),
+    FOREIGN KEY (protocol_id,training_id) REFERENCES attestation_results(protocol_id,training_id)
+)""",
+     """CREATE INDEX completion_order_trainings_training_idx ON completion_order_trainings(training_id)""",
+     """CREATE TABLE completion_sequences (year INTEGER PRIMARY KEY, last_value INTEGER NOT NULL CHECK (last_value > 0))""",
+     """CREATE TABLE training_completions (
+    training_id INTEGER PRIMARY KEY REFERENCES training_enrollments(training_id), order_id INTEGER NOT NULL,
+    protocol_id INTEGER NOT NULL, completion_date TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    order_state TEXT NOT NULL DEFAULT 'signed' CHECK (order_state = 'signed'),
+    FOREIGN KEY (order_id,training_id,protocol_id,completion_date)
+        REFERENCES completion_order_trainings(order_id,training_id,protocol_id,completion_date),
+    FOREIGN KEY (order_id,order_state) REFERENCES completion_orders(id,state) DEFERRABLE INITIALLY DEFERRED
+)""",
+     """CREATE TRIGGER completion_insert BEFORE INSERT ON completion_orders
+    WHEN NEW.state != 'draft' OR EXISTS (SELECT 1 FROM completion_orders WHERE id = NEW.id AND state != 'draft')
+    BEGIN SELECT RAISE(ABORT, 'Create a draft first'); END""",
+     """CREATE TRIGGER completion_no_delete BEFORE DELETE ON completion_orders WHEN OLD.state != 'draft'
+    BEGIN SELECT RAISE(ABORT, 'Registered completion order is immutable'); END""",
+     """CREATE TRIGGER completion_register BEFORE UPDATE ON completion_orders
+    WHEN OLD.state = 'draft' AND NEW.state != 'draft' AND
+    (NEW.state != 'registered' OR NOT EXISTS (SELECT 1 FROM completion_order_trainings WHERE order_id = OLD.id))
+    BEGIN SELECT RAISE(ABORT, 'Register a populated draft before signing'); END""",
+     """CREATE TRIGGER completion_immutable BEFORE UPDATE ON completion_orders WHEN OLD.state != 'draft' AND NOT (
+    OLD.state = 'registered' AND NEW.state = 'signed' AND NEW.revision = OLD.revision + 1
+    AND NEW.id IS OLD.id AND NEW.order_date IS OLD.order_date AND NEW.kind IS OLD.kind AND NEW.group_id IS OLD.group_id
+    AND NEW.direction IS OLD.direction AND NEW.historical_number IS OLD.historical_number AND NEW.note IS OLD.note
+    AND NEW.template_id IS OLD.template_id AND NEW.number IS OLD.number AND NEW.number_key IS OLD.number_key
+    AND NEW.created_at IS OLD.created_at AND NEW.registered_at IS OLD.registered_at AND NEW.document_path IS OLD.document_path
+    AND NEW.document_sha256 IS OLD.document_sha256 AND NEW.snapshot IS OLD.snapshot
+    AND (SELECT count(*) FROM training_completions WHERE order_id = OLD.id) > 0
+    AND (SELECT count(*) FROM training_completions WHERE order_id = OLD.id) =
+        (SELECT count(*) FROM completion_order_trainings WHERE order_id = OLD.id)
+    AND NOT EXISTS (SELECT 1 FROM completion_order_trainings WHERE order_id = OLD.id AND completion_date > NEW.signed_date))
+    BEGIN SELECT RAISE(ABORT, 'Registered completion order is immutable; all completion facts required'); END""",
+     """CREATE TRIGGER completion_links_insert BEFORE INSERT ON completion_order_trainings WHEN (SELECT state FROM completion_orders WHERE id = NEW.order_id) != 'draft' BEGIN SELECT RAISE(ABORT, 'Registered completion links are immutable'); END""",
+     """CREATE TRIGGER completion_links_delete BEFORE DELETE ON completion_order_trainings WHEN (SELECT state FROM completion_orders WHERE id = OLD.order_id) != 'draft' BEGIN SELECT RAISE(ABORT, 'Registered completion links are immutable'); END""",
+     """CREATE TRIGGER completion_links_update BEFORE UPDATE ON completion_order_trainings WHEN (SELECT state FROM completion_orders WHERE id = OLD.order_id) != 'draft' OR (SELECT state FROM completion_orders WHERE id = NEW.order_id) != 'draft' BEGIN SELECT RAISE(ABORT, 'Registered completion links are immutable'); END""",
+     """CREATE TRIGGER completion_facts_insert BEFORE INSERT ON training_completions WHEN
+    EXISTS (SELECT 1 FROM training_completions WHERE training_id = NEW.training_id)
+    OR (SELECT state FROM completion_orders WHERE id = NEW.order_id) != 'registered'
+    OR NOT EXISTS (SELECT 1 FROM trainings t JOIN attestation_results r ON r.training_id = t.id
+        JOIN attestation_protocols p ON p.id = r.protocol_id
+        WHERE t.id = NEW.training_id AND t.state != 'excluded' AND p.id = NEW.protocol_id
+          AND p.state = 'signed' AND r.result = 'passed' AND NEW.completion_date >= t.start_date
+          AND NEW.completion_date >= p.attestation_date
+          AND p.id = (SELECT p2.id FROM attestation_protocols p2 JOIN attestation_results r2 ON r2.protocol_id = p2.id
+              WHERE r2.training_id = NEW.training_id AND p2.state = 'signed'
+              ORDER BY p2.attestation_date DESC,p2.id DESC LIMIT 1))
+    BEGIN SELECT RAISE(ABORT, 'Completion requires a current signed successful attestation and valid dates'); END""",
+     """CREATE TRIGGER completion_facts_no_update BEFORE UPDATE ON training_completions
+    BEGIN SELECT RAISE(ABORT, 'Completion fact is immutable'); END""",
+     """CREATE TRIGGER completion_facts_no_delete BEFORE DELETE ON training_completions
+    BEGIN SELECT RAISE(ABORT, 'Completion fact is immutable'); END""",
+     """CREATE TRIGGER completion_sequences_no_delete BEFORE DELETE ON completion_sequences
+    BEGIN SELECT RAISE(ABORT, 'Completion sequence cannot be deleted'); END""",
+     """CREATE TRIGGER completion_sequences_no_decrease BEFORE UPDATE ON completion_sequences
+    WHEN NEW.year != OLD.year OR NEW.last_value < OLD.last_value
+    BEGIN SELECT RAISE(ABORT, 'Completion sequence cannot decrease'); END""",
+     """CREATE TRIGGER completion_sequences_insert BEFORE INSERT ON completion_sequences
+    WHEN EXISTS (SELECT 1 FROM completion_sequences WHERE year = NEW.year AND last_value > NEW.last_value)
+    BEGIN SELECT RAISE(ABORT, 'Completion sequence cannot decrease'); END"""),
 )
 
 
