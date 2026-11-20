@@ -9,7 +9,9 @@ STUDENT_FIELDS = "full_name surname first_name patronymic birth_date snils citiz
 CUSTOMER_FIELDS = "full_name short_name kind inn kpp ogrn legal_address actual_address postal_address phone email bank_name bik settlement_account correspondent_account representative_name representative_position authority_basis power_of_attorney birth_date registration_address passport_series passport_number passport_issued_by passport_issue_date passport_department_code".split()
 PROGRAM_FIELDS = "name direction kind hours code edition qualification grade".split()
 TRAINING_FIELDS = "start_date end_date state".split()
+ATTESTATION_FIELDS = "attestation_result grade qualification qualification_grade attestation_note".split()
 SCHEMA = {
+    "protocol": dict.fromkeys("number date attestation_date kind chair members note".split()),
     "order": dict.fromkeys(("kind", "student_count")),
     "contract": dict.fromkeys(("total_price", "payment_terms", "currency", "student_count")),
     "center": dict.fromkeys(CENTER_FIELDS),
@@ -19,7 +21,7 @@ SCHEMA = {
     "training": dict.fromkeys(TRAINING_FIELDS),
     "document": dict.fromkeys(("number", "date", "is_test", "is_draft")),
     "group": dict.fromkeys(("name", "start_date", "end_date")),
-    "students": [dict.fromkeys(STUDENT_FIELDS + ["start_date", "end_date"])],
+    "students": [dict.fromkeys(STUDENT_FIELDS + ["start_date", "end_date"] + ATTESTATION_FIELDS)],
 }
 MAX_STUDENTS = 500
 MAX_CONTEXT_BYTES = 1024 * 1024
@@ -73,8 +75,12 @@ def fictional_context():
     context['order'].update(kind='group', student_count=2)
     context['contract'].update(total_price='1200,50', payment_terms='Вымышленный порядок оплаты', currency='RUB', student_count=2)
     context['document'].update(is_draft=False, number='ТЕСТ — НЕ ЗАРЕГИСТРИРОВАН', date='2020-01-10', is_test=True)
+    context['protocol'].update(number='ТЕСТ-П-2020-0001', date='2020-02-10', attestation_date='2020-02-10', kind='Итоговая аттестация', chair='Председатель Примеров', members='Член комиссии Тестов')
     context['students'] = [dict(context['student'], start_date='2020-01-10', end_date='2020-02-10'),
                            dict(context['student'], full_name='Образцова Анна Тестовна', surname='Образцова', first_name='Анна', patronymic='Тестовна', start_date='2020-01-10', end_date='2020-02-10')]
+    for row in context['students']:
+        row.update(dict.fromkeys(ATTESTATION_FIELDS, ''))
+        row['attestation_result'] = 'Успешно прошёл'
     return deepcopy(context)
 
 
@@ -91,7 +97,8 @@ def field_guide():
     lines += [
         '',
         'students: список до 500 слушателей. В строке цикла доступны те же поля, что у student,',
-        'а также row.start_date и row.end_date. Имя переменной row можно заменить.',
+        'а также row.start_date, row.end_date, row.attestation_result, row.grade,',
+        'row.qualification, row.qualification_grade, row.attestation_note. Имя row можно заменить.',
         '',
         'Условия: {% if customer.full_name %}Текст{% else %}Другой текст{% endif %}.',
         'Допустимы not, and, or и сравнение поля с константой через == или !=.',

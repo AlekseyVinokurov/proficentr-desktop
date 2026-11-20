@@ -227,6 +227,75 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
      """CREATE TRIGGER enrolled_group_program BEFORE UPDATE OF program_id ON training_groups
         WHEN NEW.program_id != OLD.program_id AND EXISTS (SELECT 1 FROM trainings t JOIN training_enrollments e ON e.training_id = t.id WHERE t.group_id = OLD.id)
         BEGIN SELECT RAISE(ABORT, 'Enrolled group program is immutable'); END"""),
+    ("""CREATE TABLE attestation_protocols (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, protocol_date TEXT NOT NULL, attestation_date TEXT NOT NULL,
+        direction TEXT NOT NULL CHECK (direction IN ('dpo','po')), kind TEXT NOT NULL,
+        group_id INTEGER REFERENCES training_groups(id), historical_number TEXT NOT NULL DEFAULT '',
+        chair TEXT NOT NULL DEFAULT '', members TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
+        template_id INTEGER REFERENCES document_templates(id),
+        state TEXT NOT NULL DEFAULT 'draft' CHECK (state IN ('draft','registered','signed')),
+        number TEXT, number_key TEXT UNIQUE, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        registered_at TEXT NOT NULL DEFAULT '', document_path TEXT NOT NULL DEFAULT '', document_sha256 TEXT NOT NULL DEFAULT '',
+        snapshot TEXT NOT NULL DEFAULT '{}', signed_date TEXT NOT NULL DEFAULT '', confirmed_at TEXT NOT NULL DEFAULT '',
+        confirmed_by TEXT NOT NULL DEFAULT '', revision INTEGER NOT NULL DEFAULT 1,
+        CHECK ((direction = 'dpo' AND kind = 'Итоговая аттестация') OR (direction = 'po' AND kind = 'Квалификационный экзамен')),
+        CHECK ((number IS NULL) = (number_key IS NULL)),
+        CHECK ((state = 'draft' AND number IS NULL AND registered_at = '' AND document_path = '' AND snapshot = '{}') OR
+               (state != 'draft' AND length(trim(number)) > 0 AND length(number_key) > 0 AND registered_at != ''
+                AND template_id IS NOT NULL AND document_path != '' AND length(document_sha256) = 64 AND snapshot != '{}')),
+        CHECK ((state != 'signed' AND signed_date = '' AND confirmed_at = '' AND confirmed_by = '') OR
+               (state = 'signed' AND signed_date >= protocol_date AND signed_date >= attestation_date
+                AND confirmed_at != '' AND length(trim(confirmed_by)) > 0))
+    )""",
+     """CREATE TABLE attestation_results (
+        protocol_id INTEGER NOT NULL REFERENCES attestation_protocols(id),
+        training_id INTEGER NOT NULL REFERENCES training_enrollments(training_id),
+        position INTEGER NOT NULL CHECK (position >= 0),
+        result TEXT NOT NULL DEFAULT '' CHECK (result IN ('','passed','failed','absent')),
+        grade TEXT NOT NULL DEFAULT '', qualification TEXT NOT NULL DEFAULT '',
+        qualification_grade TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (protocol_id,training_id), UNIQUE (protocol_id,position)
+     )""",
+     "CREATE INDEX attestation_results_training_idx ON attestation_results(training_id)",
+     "CREATE TABLE attestation_sequences (year INTEGER PRIMARY KEY, last_value INTEGER NOT NULL CHECK (last_value > 0))",
+     """CREATE TRIGGER attestation_sequences_insert BEFORE INSERT ON attestation_sequences
+        WHEN EXISTS (SELECT 1 FROM attestation_sequences WHERE year = NEW.year AND last_value > NEW.last_value)
+        BEGIN SELECT RAISE(ABORT, 'Protocol sequence cannot decrease'); END""",
+     """CREATE TRIGGER attestation_sequences_no_delete BEFORE DELETE ON attestation_sequences
+        BEGIN SELECT RAISE(ABORT, 'Protocol sequence cannot be deleted'); END""",
+     """CREATE TRIGGER attestation_sequences_no_decrease BEFORE UPDATE ON attestation_sequences
+        WHEN NEW.year != OLD.year OR NEW.last_value < OLD.last_value
+        BEGIN SELECT RAISE(ABORT, 'Protocol sequence cannot decrease'); END""",
+     """CREATE TRIGGER attestation_insert BEFORE INSERT ON attestation_protocols
+        WHEN NEW.state != 'draft' OR EXISTS (SELECT 1 FROM attestation_protocols WHERE id = NEW.id AND state != 'draft')
+        BEGIN SELECT RAISE(ABORT, 'Create a draft first'); END""",
+     """CREATE TRIGGER attestation_no_delete BEFORE DELETE ON attestation_protocols WHEN OLD.state != 'draft'
+        BEGIN SELECT RAISE(ABORT, 'Registered protocol is immutable'); END""",
+     """CREATE TRIGGER attestation_register BEFORE UPDATE ON attestation_protocols
+        WHEN OLD.state = 'draft' AND NEW.state != 'draft' AND
+        (NEW.state != 'registered' OR NOT EXISTS (SELECT 1 FROM attestation_results WHERE protocol_id = OLD.id))
+        BEGIN SELECT RAISE(ABORT, 'Register a populated draft before signing'); END""",
+     """CREATE TRIGGER attestation_immutable BEFORE UPDATE ON attestation_protocols WHEN OLD.state != 'draft' AND NOT (
+        OLD.state = 'registered' AND NEW.state = 'signed' AND NEW.revision = OLD.revision + 1
+        AND NEW.id IS OLD.id AND NEW.protocol_date IS OLD.protocol_date AND NEW.attestation_date IS OLD.attestation_date
+        AND NEW.direction IS OLD.direction AND NEW.kind IS OLD.kind AND NEW.group_id IS OLD.group_id
+        AND NEW.historical_number IS OLD.historical_number AND NEW.chair IS OLD.chair AND NEW.members IS OLD.members
+        AND NEW.note IS OLD.note AND NEW.template_id IS OLD.template_id AND NEW.number IS OLD.number
+        AND NEW.number_key IS OLD.number_key AND NEW.created_at IS OLD.created_at AND NEW.registered_at IS OLD.registered_at
+        AND NEW.document_path IS OLD.document_path AND NEW.document_sha256 IS OLD.document_sha256 AND NEW.snapshot IS OLD.snapshot
+        AND EXISTS (SELECT 1 FROM attestation_results WHERE protocol_id = OLD.id)
+        AND NOT EXISTS (SELECT 1 FROM attestation_results WHERE protocol_id = OLD.id AND result = ''))
+        BEGIN SELECT RAISE(ABORT, 'Registered protocol and results are immutable; signing requires complete results'); END""",
+     """CREATE TRIGGER attestation_results_insert BEFORE INSERT ON attestation_results
+        WHEN (SELECT state FROM attestation_protocols WHERE id = NEW.protocol_id) != 'draft'
+        BEGIN SELECT RAISE(ABORT, 'Registered results are immutable'); END""",
+     """CREATE TRIGGER attestation_results_delete BEFORE DELETE ON attestation_results
+        WHEN (SELECT state FROM attestation_protocols WHERE id = OLD.protocol_id) != 'draft'
+        BEGIN SELECT RAISE(ABORT, 'Registered results are immutable'); END""",
+     """CREATE TRIGGER attestation_results_update BEFORE UPDATE ON attestation_results
+        WHEN (SELECT state FROM attestation_protocols WHERE id = OLD.protocol_id) != 'draft'
+          OR (SELECT state FROM attestation_protocols WHERE id = NEW.protocol_id) != 'draft'
+        BEGIN SELECT RAISE(ABORT, 'Registered results are immutable'); END"""),
 )
 
 

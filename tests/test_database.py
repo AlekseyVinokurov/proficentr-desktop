@@ -15,7 +15,7 @@ def test_create_reopen_and_close(tmp_path):
         assert [row[0] for row in first] == list(range(1, len(module.MIGRATIONS) + 1))
         assert database.connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall() == [("schema_migrations",), ("training_center",), ("students",), ("sqlite_sequence",), ("counterparties",), ("programs",), ("training_groups",), ("trainings",), ("document_templates",), ("contracts",), ("contract_trainings",), ("contract_sequences",), ("enrollment_orders",), ("enrollment_order_trainings",), ("enrollment_order_sequences",), ("training_enrollments",)]
+        ).fetchall() == [("schema_migrations",), ("training_center",), ("students",), ("sqlite_sequence",), ("counterparties",), ("programs",), ("training_groups",), ("trainings",), ("document_templates",), ("contracts",), ("contract_trainings",), ("contract_sequences",), ("enrollment_orders",), ("enrollment_order_trainings",), ("enrollment_order_sequences",), ("training_enrollments",), ("attestation_protocols",), ("attestation_results",), ("attestation_sequences",)]
     with pytest.raises(sqlite3.ProgrammingError):
         database.connection.execute("SELECT 1")
     with Database(path) as reopened:

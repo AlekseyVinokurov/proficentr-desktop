@@ -302,7 +302,7 @@ def test_migration9_preserves_version8_and_backup(orders,tmp_path,monkeypatch):
             for name,sql in link_triggers: old.connection.execute(sql)
     monkeypatch.setattr(db_module,'MIGRATIONS',all_migrations)
     with Database(path) as upgraded:
-        assert upgraded.connection.execute('SELECT max(version) FROM schema_migrations').fetchone()==(9,)
+        assert upgraded.connection.execute('SELECT max(version) FROM schema_migrations').fetchone()==(len(all_migrations),)
         for name in tables: assert upgraded.connection.execute(f'SELECT * FROM {name}').fetchall()==before[name]
         assert EnrollmentOrderRepository(upgraded.connection,r.storage).contracts.verify_document(contract.id).read_bytes()==original
         assert upgraded.connection.execute('PRAGMA integrity_check').fetchall()==[('ok',)]

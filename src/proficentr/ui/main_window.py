@@ -19,6 +19,8 @@ from proficentr.training_repository import TrainingRepository
 from proficentr.ui.groups_page import GroupsPage
 from proficentr.contract_repository import ContractRepository
 from proficentr.ui.contracts_page import ContractsPage
+from proficentr.attestation_repository import AttestationRepository
+from proficentr.ui.attestations_page import AttestationsPage
 from proficentr.enrollment_order_repository import EnrollmentOrderRepository
 from proficentr.ui.enrollment_orders_page import EnrollmentOrdersPage
 
@@ -63,9 +65,11 @@ class MainWindow(QMainWindow):
                 root = database_path.parent.parent if database_path.parent.name == "database" else database_path.parent
                 self.contracts_page = ContractsPage(ContractRepository(database.connection, storage or Storage(root)) if database else None)
                 self.orders_page = EnrollmentOrdersPage(EnrollmentOrderRepository(database.connection, storage or Storage(root)) if database else None)
+                self.attestations_page = AttestationsPage(AttestationRepository(database.connection, storage or Storage(root)) if database else None)
                 self.documents_page = QTabWidget()
                 self.documents_page.addTab(self.contracts_page, "Договоры")
                 self.documents_page.addTab(self.orders_page, "Приказы о зачислении")
+                self.documents_page.addTab(self.attestations_page, "Протоколы аттестации")
                 self.pages.addWidget(self.documents_page)
                 continue
             if section == "Настройки":
@@ -99,11 +103,17 @@ class MainWindow(QMainWindow):
         self.navigation.setCurrentRow(0)
         self.groups_page.contract_requested.connect(self._create_contract)
         self.groups_page.order_requested.connect(self._create_order)
+        self.groups_page.attestation_requested.connect(self._create_attestation)
 
     def _create_contract(self, training_ids, group_id):
         self.navigation.setCurrentRow(SECTIONS.index("Документы"))
         self.documents_page.setCurrentWidget(self.contracts_page)
         self.contracts_page.open_card(training_ids=training_ids, group_id=group_id)
+
+    def _create_attestation(self, training_ids, group_id):
+        self.navigation.setCurrentRow(SECTIONS.index("Документы"))
+        self.documents_page.setCurrentWidget(self.attestations_page)
+        self.attestations_page.open_card(training_ids=training_ids, group_id=group_id)
 
     def _create_order(self, training_ids, group_id):
         self.navigation.setCurrentRow(SECTIONS.index("Документы"))

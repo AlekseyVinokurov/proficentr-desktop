@@ -21,6 +21,8 @@ from proficentr.training_repository import TrainingRepository
 from proficentr.trainings import TrainingGroup, Training
 from proficentr.document_templates import TemplateRepository
 from proficentr.contract_repository import ContractRepository
+from proficentr.attestations import AttestationProtocol, AttestationResult
+from proficentr.attestation_repository import AttestationRepository
 from proficentr.enrollment_orders import EnrollmentOrder
 from proficentr.enrollment_order_repository import EnrollmentOrderRepository
 from proficentr.contracts import Contract
@@ -118,6 +120,28 @@ def main():
             order_files = {o.id: orders.verify_document(o.id).read_bytes() for o in (registered_order,signed_order)}
             order_templates = {v.id: v for v in orders.templates.list_versions('enrollment_order')}
             order_template_files = {v.relative_path: (storage.root / v.relative_path).read_bytes() for v in order_templates.values()}
+        sample_docx = Document()
+        sample_docx.add_paragraph('{{ protocol.number }} {{ protocol.date }} {{ protocol.kind }} {{ protocol.attestation_date }}')
+        sample_docx.add_paragraph('{% for row in students %}{{ row.full_name }} {{ row.attestation_result }} {{ row.grade }}{% endfor %}')
+        sample_docx.save(source_template)
+        with Database(storage.database_path) as db:
+            protocols = AttestationRepository(db.connection, storage)
+            protocol_template = protocols.templates.register(source_template, 'protocol_dpo', 'synthetic', 'Synthetic attestation')
+            protocol_files = {}
+            saved_protocols = []
+            for result, day in (('failed', '2020-02-01'), ('passed', '2020-03-01')):
+                p = protocols.save(AttestationProtocol(protocol_date=day, attestation_date=day), [AttestationResult(individual_training.id, result)])
+                p = protocols.register(p.id, protocols.prepare(p.id).signature)
+                p = protocols.confirm_signing(p.id, signed_date=day, confirmed_by='Synthetic responsible')
+                saved_protocols.append(p)
+                protocol_files[p.id] = protocols.verify_document(p.id).read_bytes()
+            registered_protocol = protocols.save(AttestationProtocol(protocol_date='2020-04-01', attestation_date='2020-04-01'), [AttestationResult(individual_training.id)])
+            registered_protocol = protocols.register(registered_protocol.id, protocols.prepare(registered_protocol.id).signature)
+            saved_protocols.append(registered_protocol)
+            protocol_files[registered_protocol.id] = protocols.verify_document(registered_protocol.id).read_bytes()
+            protocol_results = {p.id: protocols.results(p.id) for p in saved_protocols}
+            protocol_sequence = db.connection.execute('SELECT * FROM attestation_sequences').fetchall()
+            protocol_template_bytes = (storage.root / protocol_template.relative_path).read_bytes()
         settings.save_directory(storage.root)
         (storage.root/'attachments'/'synthetic.txt').write_text('preserve me')
         config_before=settings.config_file().read_bytes()
@@ -199,6 +223,15 @@ def main():
                 assert orders.training_ids(signed_order.id) == [individual_training.id]
                 assert trainings.load(individual_training.id).state == 'enrolled'
                 assert db.connection.execute('SELECT order_id FROM training_enrollments WHERE training_id=?', (individual_training.id,)).fetchone() == (signed_order.id,)
+                protocols = AttestationRepository(db.connection, storage)
+                for p in saved_protocols:
+                    assert protocols.load(p.id) == p
+                    assert protocols.results(p.id) == protocol_results[p.id]
+                    assert protocols.verify_document(p.id).read_bytes() == protocol_files[p.id]
+                assert protocols.current_confirmed_result(individual_training.id)[0] == saved_protocols[1].id
+                assert protocols.templates.load(protocol_template.id) == protocol_template
+                assert (storage.root / protocol_template.relative_path).read_bytes() == protocol_template_bytes
+                assert db.connection.execute('SELECT * FROM attestation_sequences').fetchall() == protocol_sequence
                 package, warnings = orders.prepare_package(registered_order.id)
                 assert (package / 'Приказ.docx').is_file()
                 assert len(list(package.glob('*.docx'))) == 2
