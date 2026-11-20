@@ -73,6 +73,10 @@ def main() -> int:
                     if window.pages.currentIndex() != index:
                         raise RuntimeError("Не работает навигация.")
                 window.navigation.setCurrentRow(0)
+                # CI fixtures may contain templates: exercise the renderer in the frozen EXE.
+                templates = window.settings_page.templates_page.repository
+                for version in templates.list_versions():
+                    templates.test_document(version.id)
                 QTimer.singleShot(200, app.quit)
             return app.exec()
     except Exception as error:

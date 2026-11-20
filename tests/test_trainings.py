@@ -248,7 +248,7 @@ def test_migration_six_preserves_all_previous_tables_and_backup(tmp_path, monkey
                       ('schema_migrations', 'students', 'counterparties', 'programs', 'training_center')}
     for _ in range(2):
         with Database(path) as db:
-            assert db.connection.execute('SELECT max(version) FROM schema_migrations').fetchone() == (6,)
+            assert db.connection.execute('SELECT max(version) FROM schema_migrations').fetchone() == (len(migrations),)
             for table, rows in before.items():
                 stored = db.connection.execute(f'SELECT * FROM {table}').fetchall()
                 assert (stored[:5] if table == 'schema_migrations' else stored) == rows

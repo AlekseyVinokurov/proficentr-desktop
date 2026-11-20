@@ -19,6 +19,8 @@ from proficentr.programs import Program
 from proficentr.program_repository import ProgramRepository
 from proficentr.training_repository import TrainingRepository
 from proficentr.trainings import TrainingGroup, Training
+from proficentr.document_templates import TemplateRepository
+from docx import Document
 
 
 def wait_file(path, process, seconds=120):
@@ -61,6 +63,21 @@ def main():
             archived_group = trainings.set_active(archived_group.id, False)
             individual_training = trainings.save(Training(student_id=1, program_id=active_program.id,
                                                           start_date='2018-01-01', end_date='2018-02-01'))
+        source_template = root / 'synthetic-template.docx'
+        sample_docx = Document()
+        sample_docx.add_paragraph('TEST {{ center.full_name }} - {{ student.full_name }}')
+        sample_docx.save(source_template)
+        with Database(storage.database_path) as db:
+            templates = TemplateRepository(db.connection, storage)
+            first_template = templates.register(source_template, 'other', 'ci', 'Synthetic template')
+            sample_docx.add_paragraph('{{ program.hours }}')
+            sample_docx.save(source_template)
+            second_template = templates.register(source_template, 'other', 'ci', 'Synthetic template v2')
+            first_template = templates.load(first_template.id)
+            test_docx = templates.test_document(first_template.id)
+            template_files = {version.relative_path: (storage.root / version.relative_path).read_bytes()
+                              for version in (first_template, second_template)}
+            original_test_docx = test_docx.read_bytes()
         settings.save_directory(storage.root)
         (storage.root/'attachments'/'synthetic.txt').write_text('preserve me')
         config_before=settings.config_file().read_bytes()
@@ -112,6 +129,15 @@ def main():
                 for training in (group_training, archived_training, individual_training):
                     assert trainings.load(training.id) == training
                 assert db.connection.execute('PRAGMA foreign_key_check').fetchall() == []
+                templates = TemplateRepository(db.connection, storage)
+                assert templates.load(first_template.id) == first_template
+                assert templates.load(second_template.id) == second_template
+                for relative_path, data in template_files.items():
+                    assert (storage.root / relative_path).read_bytes() == data
+                assert test_docx.read_bytes() == original_test_docx
+                # --smoke-test generated a new fictional DOCX inside the frozen EXE.
+                assert len(list((storage.root / 'exports' / 'template-tests').glob('*.docx'))) >= 3
+                assert templates.test_document(second_template.id).is_file()
         finally:
             if new_pid:subprocess.run(['taskkill','/PID',str(new_pid),'/T','/F'],check=False,capture_output=True)
             if helper_process.poll() is None:helper_process.kill();helper_process.wait()

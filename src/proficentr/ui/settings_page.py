@@ -12,6 +12,8 @@ from proficentr.storage import relocate_storage
 from proficentr.organization import TrainingCenterRepository
 from proficentr.ui.training_center_page import TrainingCenterPage
 from proficentr.ui.about_page import AboutPage
+from proficentr.document_templates import TemplateRepository
+from proficentr.ui.templates_page import TemplatesPage
 
 
 class SettingsPage(QWidget):
@@ -54,6 +56,8 @@ class SettingsPage(QWidget):
         self.tabs.addTab(self.center_page, "Учебный центр")
         self.about_page = AboutPage(storage)
         self.tabs.addTab(self.about_page, "О программе")
+        self.templates_page = TemplatesPage(TemplateRepository(database.connection, storage) if database else None)
+        self.tabs.addTab(self.templates_page, "Шаблоны документов")
         self._tab_index = 0
         self.tabs.currentChanged.connect(self._change_tab)
 

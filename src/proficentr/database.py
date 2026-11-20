@@ -100,6 +100,19 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
      "CREATE INDEX trainings_program_idx ON trainings(program_id)",
      "CREATE INDEX trainings_student_dates_idx ON trainings(student_id, start_date, end_date)",
      "CREATE UNIQUE INDEX trainings_group_student_idx ON trainings(group_id, student_id) WHERE state = 'preparation'"),
+    ("""CREATE TABLE document_templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        document_type TEXT NOT NULL CHECK (length(trim(document_type)) > 0),
+        variant TEXT NOT NULL CHECK (length(trim(variant)) > 0),
+        name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+        version INTEGER NOT NULL CHECK (version > 0),
+        relative_path TEXT NOT NULL UNIQUE,
+        sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+        added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        active INTEGER NOT NULL CHECK (active IN (0, 1)),
+        UNIQUE (document_type, variant, version)
+    )""",
+     "CREATE UNIQUE INDEX document_templates_active_idx ON document_templates(document_type, variant) WHERE active = 1"),
 )
 
 
