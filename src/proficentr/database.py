@@ -446,10 +446,11 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
     (SELECT state FROM issued_documents WHERE id=NEW.document_id)!='registered'
     OR NEW.event_date < (SELECT document_date FROM issued_documents WHERE id=NEW.document_id)
     OR EXISTS(SELECT 1 FROM document_transfers WHERE id=NEW.id)
+    OR (NEW.method='post_confirmation' AND EXISTS(SELECT 1 FROM document_transfers WHERE method='post_confirmation' AND parent_event_id=NEW.parent_event_id))
     OR (NEW.method='post_confirmation' AND NOT EXISTS(SELECT 1 FROM document_transfers p WHERE p.id=NEW.parent_event_id
         AND p.document_id=NEW.document_id AND p.method='post' AND NEW.received_date>=p.event_date))
     BEGIN SELECT RAISE(ABORT,'Registered document and valid original postal event required'); END""",
-     """CREATE TRIGGER evidence_insert BEFORE INSERT ON transfer_evidence WHEN EXISTS(SELECT 1 FROM transfer_evidence WHERE id=NEW.id)
+     """CREATE TRIGGER evidence_insert BEFORE INSERT ON transfer_evidence WHEN EXISTS(SELECT 1 FROM transfer_evidence WHERE id=NEW.id OR relative_path=NEW.relative_path)
     BEGIN SELECT RAISE(ABORT,'Evidence cannot be replaced'); END""",
      """CREATE TRIGGER transfers_no_update BEFORE UPDATE ON document_transfers BEGIN SELECT RAISE(ABORT,'History is append only'); END""",
      """CREATE TRIGGER transfers_no_delete BEFORE DELETE ON document_transfers BEGIN SELECT RAISE(ABORT,'History is append only'); END""",

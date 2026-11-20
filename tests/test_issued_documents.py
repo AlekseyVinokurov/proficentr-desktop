@@ -1,5 +1,5 @@
 """Только вымышленные завершения, выпускные документы и подтверждения."""
-from dataclasses import replace
+from dataclasses import asdict, replace
 import hashlib
 import json
 from pathlib import Path
@@ -191,6 +191,10 @@ def test_personal_post_confirmation_email_separate_events(issued):
     personal=r.delivery.add(event(d,'personal',event_date='2020-04-09'))
     assert personal.medium=='original' and len(r.delivery.history(d.id))==4
     assert r.delivery.load(post.id).postal_status=='sent'
+    replacement=asdict(confirmed);replacement.pop('id');replacement.pop('created_at')
+    with pytest.raises(sqlite3.IntegrityError),r.db.connection:
+        r.db.connection.execute(f"INSERT OR REPLACE INTO document_transfers ({','.join(replacement)}) VALUES ({','.join('?' for _ in replacement)})",tuple(replacement.values()))
+    assert r.delivery.load(confirmed.id)==confirmed and len(r.delivery.history(d.id))==4
 
 
 @pytest.mark.parametrize('changes',[{'method':'email','email':'bad'},{'recipient':''},{'confirmation':''},{'event_date':'2019-01-01'},
@@ -221,6 +225,10 @@ def test_evidence_valid_content_copy_hash_and_immutability(issued,tmp_path,exten
     copy=r.delivery.evidence_copy(evidence[0]);copy.write_bytes(b'edited copy');assert path.read_bytes()==original
     for sql in ('DELETE FROM transfer_evidence WHERE id=?',"UPDATE transfer_evidence SET sha256='other' WHERE id=?"):
         with pytest.raises(sqlite3.IntegrityError),r.db.connection:r.db.connection.execute(sql,(evidence[0],))
+    with pytest.raises(sqlite3.IntegrityError),r.db.connection:
+        r.db.connection.execute('INSERT OR REPLACE INTO transfer_evidence(event_id,relative_path,sha256,evidence_type,format) VALUES (?,?,?,?,?)',
+            (e.id,evidence[1],evidence[2],'Замена подтверждения',extension))
+    assert r.delivery.evidence(e.id)==[evidence]
     path.write_bytes(b'bad')
     with pytest.raises(ValueError):r.delivery.verify_evidence(evidence[0])
 
