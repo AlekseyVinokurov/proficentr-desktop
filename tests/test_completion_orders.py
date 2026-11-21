@@ -367,6 +367,7 @@ def test_migration11_preserves_v10_data_and_backup(completions,tmp_path,monkeypa
     with Database(path) as old:
         r.db.connection.backup(old.connection)
         with old.connection:
+            old.connection.execute('DROP TABLE frdo_templates')
             for name, in old.connection.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND (name LIKE 'issued_%' OR name LIKE 'transfer_%' OR name LIKE 'transfers_%' OR name LIKE 'evidence_%')").fetchall():old.connection.execute(f'DROP TRIGGER {name}')
             for table in ('transfer_evidence','document_transfers','issued_documents','issued_sequences'):old.connection.execute(f'DROP TABLE IF EXISTS {table}')
             for name, in old.connection.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'completion%'").fetchall(): old.connection.execute(f'DROP TRIGGER {name}')

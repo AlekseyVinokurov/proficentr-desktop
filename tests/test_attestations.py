@@ -274,6 +274,7 @@ def test_migration10_preserves_existing_v9_and_backup(attestations,tmp_path,monk
         # An actual version 9 database with a signed order and its protected enrollment.
         r.db.connection.backup(old.connection)
         with old.connection:
+            old.connection.execute('DROP TABLE frdo_templates')
             for name, in old.connection.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND (name LIKE 'issued_%' OR name LIKE 'transfer_%' OR name LIKE 'transfers_%' OR name LIKE 'evidence_%')").fetchall():old.connection.execute(f'DROP TRIGGER {name}')
             for table in ('transfer_evidence','document_transfers','issued_documents','issued_sequences'):old.connection.execute(f'DROP TABLE IF EXISTS {table}')
             for name, in old.connection.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND (name LIKE 'attestation%' OR name LIKE 'completion%')").fetchall(): old.connection.execute(f'DROP TRIGGER {name}')
