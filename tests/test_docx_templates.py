@@ -10,6 +10,8 @@ from docx import Document
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 import pytest
 
+from legacy_schema import legacy_columns, use_legacy_card_fields
+
 import proficentr.database as database_module
 import proficentr.docx_engine as engine
 from proficentr.database import Database
@@ -387,6 +389,7 @@ def test_migration_seven_preserves_six_and_existing_records(tmp_path, monkeypatc
     migrations = database_module.MIGRATIONS
     with monkeypatch.context() as old:
         old.setattr(database_module, 'MIGRATIONS', migrations[:6])
+        use_legacy_card_fields(old)
         storage = prepare_storage(tmp_path / 'archive')
         with open_database(storage) as db:
             db.connection.execute("INSERT INTO students(surname,first_name,birth_date) VALUES ('Тестов','Пример','1990-01-01')")
@@ -398,10 +401,11 @@ def test_migration_seven_preserves_six_and_existing_records(tmp_path, monkeypatc
             repo.add_students(group.id, [1])
             repo.save(Training(student_id=1, program_id=program.id, start_date='2021-01-01', end_date='2021-02-01'))
             tables = ['training_center', 'students', 'counterparties', 'programs', 'training_groups', 'trainings', 'schema_migrations']
+            columns = {table: legacy_columns(db.connection, table) for table in tables}
             before = {table: db.connection.execute(f'SELECT * FROM {table}').fetchall() for table in tables}
     with open_database(storage) as db:
         for table, rows in before.items():
-            after = db.connection.execute(f'SELECT * FROM {table}').fetchall()
+            after = db.connection.execute(f'SELECT {columns[table]} FROM {table}').fetchall()
             assert (after[:6] if table == 'schema_migrations' else after) == rows
         assert db.connection.execute('SELECT max(version) FROM schema_migrations').fetchone() == (len(migrations),)
         assert db.connection.execute('PRAGMA foreign_key_check').fetchall() == []

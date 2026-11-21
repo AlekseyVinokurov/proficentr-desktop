@@ -92,6 +92,9 @@ def main() -> int:
                 issued = window.issued_documents_page.repository
                 for row in issued.search(state='registered'):
                     issued.verify_document(row[0])
+                    registered = issued.load(row[0])
+                    if frdo.active(registered.direction) is not None:
+                        window.frdo_preparation_page.repository.review(row[0])
                     for event in window.issued_documents_page.delivery.history(row[0]):
                         for evidence in window.issued_documents_page.delivery.evidence(event.id):
                             window.issued_documents_page.delivery.verify_evidence(evidence[0])

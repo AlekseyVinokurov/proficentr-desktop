@@ -9,6 +9,8 @@ from PySide6.QtWidgets import (
 )
 from proficentr.storage import Storage
 from proficentr.ui.settings_page import SettingsPage
+from proficentr.frdo_preparation import FrdoPreparationRepository
+from proficentr.ui.frdo_preparation_page import FrdoPreparationPage
 from proficentr.student_repository import StudentRepository
 from proficentr.ui.students_page import StudentsPage
 from proficentr.counterparty_repository import CounterpartyRepository
@@ -80,6 +82,8 @@ class MainWindow(QMainWindow):
                 self.documents_page.addTab(self.attestations_page, "Протоколы аттестации")
                 self.documents_page.addTab(self.completion_orders_page, "Приказы о завершении")
                 self.documents_page.addTab(self.issued_documents_page, "Выпускные документы")
+                self.frdo_preparation_page = FrdoPreparationPage(FrdoPreparationRepository(database.connection, storage or Storage(root)) if database else None)
+                self.documents_page.addTab(self.frdo_preparation_page, "Подготовка ФРДО")
                 self.pages.addWidget(self.documents_page)
                 continue
             if section == "Настройки":

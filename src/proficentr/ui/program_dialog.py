@@ -1,5 +1,7 @@
 """Карточка программы: совместимые виды ДПО/ПО и отложенное сохранение."""
 
+from dataclasses import asdict
+
 from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
@@ -150,7 +152,7 @@ class ProgramDialog(QDialog):
     def values(self):
         values = self._state()
         values["hours"] = hours_from_text(values["hours"])
-        return Program(id=self.original.id, **values)
+        return Program(**(asdict(self.original) | values))
 
     def is_dirty(self):
         return self._state() != self._initial_state

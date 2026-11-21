@@ -47,3 +47,39 @@ def synthetic_template(kind):
     stream = BytesIO()
     workbook.save(stream)
     return stream.getvalue()
+
+
+def preparation_template(kind):
+    """Короткие вымышленные справочники для проверок адаптера и frozen smoke."""
+    from openpyxl import load_workbook
+    from proficentr.frdo_preparation import PROGRAM_TYPES
+    from proficentr.frdo_validation import FIELDS
+    from proficentr.issued_documents import KINDS
+    workbook = load_workbook(BytesIO(synthetic_template(kind)))
+    f = FIELDS[kind]
+    dictionaries = {'A': tuple(v for k, v in KINDS.items() if k.startswith(kind)), 'B': ('Оригинал', 'Дубликат'),
+        **{col: ('Нет',) for col in ('C', 'D', 'E')},
+        'J': tuple(v for k, v in PROGRAM_TYPES.items() if k.startswith(kind)),
+        f['sex']: ('Муж', 'Жен'), f['citizenship']: ('000', '004', '643'),
+        f['form']: ('Очная', 'Заочная'), f['funding']: ('Платное обучение', 'Местный бюджет'),
+        f['relations']: ('в образовательной организации', 'вне образовательной организации')}
+    dictionaries.update({'L': ('Тестовая область',), 'M': ('Тестовая группа',), 'O': ('Высшее образование',)}
+                        if kind == 'dpo' else {'L': ('Тестовая профессия',), 'M': ('Нет', '2', '3')})
+    for validation in workbook['Шаблон'].data_validations.dataValidation:
+        if validation.type != 'list':
+            continue
+        from openpyxl.utils import get_column_letter
+        column = get_column_letter(next(iter(validation.sqref.ranges)).min_col)
+        if column not in dictionaries:
+            continue
+        definition = workbook.defined_names[validation.formula1]
+        if definition.attr_text.startswith('Таблица1'):
+            cells = [workbook['Проверки'].cell(row, 7) for row in range(2, 35)]
+        else:
+            title, coordinate = next(definition.destinations)
+            cells = [c for row in workbook[title][coordinate] for c in row]
+        for index, cell in enumerate(cells):
+            cell.value = dictionaries[column][index] if index < len(dictionaries[column]) else None
+    output = BytesIO()
+    workbook.save(output)
+    return output.getvalue()

@@ -9,6 +9,8 @@ from uuid import uuid4
 from docx import Document
 import pytest
 
+from legacy_schema import legacy_columns
+
 from test_contracts import records, draft as contract_draft, register as register_contract
 import proficentr.enrollment_order_repository as module
 import proficentr.database as db_module
@@ -288,7 +290,8 @@ def test_migration9_preserves_version8_and_backup(orders,tmp_path,monkeypatch):
     contract=register_contract(replace_records(r),contract_draft(replace_records(r)))
     original=r.contracts.verify_document(contract.id).read_bytes()
     tables=('training_center','students','counterparties','programs','training_groups','trainings','document_templates','contracts','contract_trainings','contract_sequences')
-    before={name:r.db.connection.execute(f'SELECT * FROM {name}').fetchall() for name in tables}
+    columns = {name: legacy_columns(r.db.connection, name) for name in tables}
+    before={name:r.db.connection.execute(f'SELECT {columns[name]} FROM {name}').fetchall() for name in tables}
     all_migrations=db_module.MIGRATIONS
     monkeypatch.setattr(db_module,'MIGRATIONS',all_migrations[:8])
     with Database(path) as old:
@@ -303,7 +306,7 @@ def test_migration9_preserves_version8_and_backup(orders,tmp_path,monkeypatch):
     monkeypatch.setattr(db_module,'MIGRATIONS',all_migrations)
     with Database(path) as upgraded:
         assert upgraded.connection.execute('SELECT max(version) FROM schema_migrations').fetchone()==(len(all_migrations),)
-        for name in tables: assert upgraded.connection.execute(f'SELECT * FROM {name}').fetchall()==before[name]
+        for name in tables: assert upgraded.connection.execute(f'SELECT {columns[name]} FROM {name}').fetchall()==before[name]
         assert EnrollmentOrderRepository(upgraded.connection,r.storage).contracts.verify_document(contract.id).read_bytes()==original
         assert upgraded.connection.execute('PRAGMA integrity_check').fetchall()==[('ok',)]
     backups=list((tmp_path/'migration-backups').glob('*.sqlite3')); assert backups

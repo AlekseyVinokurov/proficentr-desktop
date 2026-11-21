@@ -13,7 +13,7 @@ from proficentr.trainings import (
 
 GROUP_FIELDS = tuple(asdict(TrainingGroup()))
 TRAINING_FIELDS = tuple(asdict(Training()))
-SNAPSHOT_FIELDS = ("full_name", "direction", "kind", "hours", "code", "edition", "qualification", "grade")
+SNAPSHOT_FIELDS = ("full_name", "direction", "kind", "hours", "code", "edition", "qualification", "grade", "dpo_area", "dpo_group", "po_profession")
 
 
 class TrainingRepositoryError(Exception):
@@ -97,7 +97,8 @@ class TrainingRepository:
         program = self.programs.load(program_id)
         if require_active and not program.active:
             raise ValueError("Для нового выбора нужна активная программа.")
-        return json.dumps({key: getattr(program, key) for key in SNAPSHOT_FIELDS}, ensure_ascii=False)
+        return json.dumps({key: getattr(program, key) for key in SNAPSHOT_FIELDS
+                           if key not in {"dpo_area", "dpo_group", "po_profession"} or getattr(program, key)}, ensure_ascii=False)
 
     def save_group(self, group, *, change_program=False, allow_overlap=False):
         group = validate_group(group)

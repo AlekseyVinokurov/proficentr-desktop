@@ -12,6 +12,8 @@ from uuid import uuid4
 from docx import Document
 import pytest
 
+from legacy_schema import legacy_columns, use_legacy_card_fields
+
 import proficentr.database as db_module
 import proficentr.contract_repository as module
 from proficentr.contracts import Contract, ContractError, format_price, price_from_text
@@ -391,6 +393,7 @@ def test_migration_eight_preserves_all_seven_tables_and_files(tmp_path, monkeypa
     migrations = db_module.MIGRATIONS
     with monkeypatch.context() as old:
         old.setattr(db_module, 'MIGRATIONS', migrations[:7])
+        use_legacy_card_fields(old)
         storage = prepare_storage(tmp_path / 'old')
         with open_database(storage) as db:
             db.connection.execute("INSERT INTO training_center(id,full_name) VALUES (1,'Тестовый центр')")
@@ -407,13 +410,14 @@ def test_migration_eight_preserves_all_seven_tables_and_files(tmp_path, monkeypa
             templates = TemplateRepository(db.connection, storage)
             version = templates.register(source, 'contract_person', 'dpo', 'Тестовая форма')
             tables = ('schema_migrations', 'training_center', 'students', 'counterparties', 'programs', 'training_groups', 'trainings', 'document_templates')
+            columns = {table: legacy_columns(db.connection, table) for table in tables}
             before = {table: db.connection.execute(f'SELECT * FROM {table}').fetchall() for table in tables}
             original = (storage.root / version.relative_path).read_bytes()
     for _ in range(2):
         with open_database(storage) as db:
             assert db.connection.execute('SELECT max(version) FROM schema_migrations').fetchone() == (len(db_module.MIGRATIONS),)
             for table, rows in before.items():
-                actual = db.connection.execute(f'SELECT * FROM {table}').fetchall()
+                actual = db.connection.execute(f'SELECT {columns[table]} FROM {table}').fetchall()
                 assert (actual[:7] if table == 'schema_migrations' else actual) == rows
             assert (storage.root / version.relative_path).read_bytes() == original
             assert db.connection.execute('PRAGMA foreign_key_check').fetchall() == []

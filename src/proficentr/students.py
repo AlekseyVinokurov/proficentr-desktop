@@ -14,6 +14,8 @@ class Student:
     birth_date: str = ""
     snils: str = ""
     citizenship: str = ""
+    sex: str = ""
+    citizenship_code: str = ""
     phone: str = ""
     email: str = ""
     registration_address: str = ""

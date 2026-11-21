@@ -476,6 +476,31 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
         added_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
         active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)), UNIQUE(kind,version))""",
      "CREATE UNIQUE INDEX frdo_templates_active ON frdo_templates(kind) WHERE active=1"),
+    ("ALTER TABLE students ADD COLUMN sex TEXT NOT NULL DEFAULT ''",
+     "ALTER TABLE students ADD COLUMN citizenship_code TEXT NOT NULL DEFAULT ''",
+     "ALTER TABLE programs ADD COLUMN dpo_area TEXT NOT NULL DEFAULT ''",
+     "ALTER TABLE programs ADD COLUMN dpo_group TEXT NOT NULL DEFAULT ''",
+     "ALTER TABLE programs ADD COLUMN po_profession TEXT NOT NULL DEFAULT ''",
+     """CREATE TABLE frdo_training_details (
+        training_id INTEGER PRIMARY KEY REFERENCES trainings(id),
+        form TEXT NOT NULL DEFAULT '', funding TEXT NOT NULL DEFAULT '', relations TEXT NOT NULL DEFAULT '',
+        education_level TEXT NOT NULL DEFAULT '', education_surname TEXT NOT NULL DEFAULT '',
+        education_series TEXT NOT NULL DEFAULT '', education_number TEXT NOT NULL DEFAULT '',
+        dpo_area TEXT NOT NULL DEFAULT '', dpo_group TEXT NOT NULL DEFAULT '',
+        po_profession TEXT NOT NULL DEFAULT '', po_grade TEXT NOT NULL DEFAULT '', qualification TEXT NOT NULL DEFAULT '',
+        patronymic TEXT NOT NULL DEFAULT '')""",
+     """CREATE TABLE frdo_change_history (
+        id INTEGER PRIMARY KEY, document_id INTEGER NOT NULL REFERENCES issued_documents(id),
+        changed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        changes TEXT NOT NULL)""",
+     """CREATE TRIGGER frdo_history_no_update BEFORE UPDATE ON frdo_change_history
+        BEGIN SELECT RAISE(ABORT,'FRDO history is immutable'); END""",
+     """CREATE TRIGGER frdo_history_no_delete BEFORE DELETE ON frdo_change_history
+        BEGIN SELECT RAISE(ABORT,'FRDO history is immutable'); END""",
+     """CREATE TRIGGER frdo_history_no_replace BEFORE INSERT ON frdo_change_history WHEN EXISTS
+        (SELECT 1 FROM frdo_change_history WHERE id=NEW.id)
+        BEGIN SELECT RAISE(ABORT,'FRDO history is immutable'); END"""),
+
 )
 
 

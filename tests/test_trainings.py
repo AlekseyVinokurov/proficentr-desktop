@@ -6,6 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from legacy_schema import legacy_columns, use_legacy_card_fields
+
 import proficentr.database as database_module
 from proficentr.database import Database
 from proficentr.programs import Program
@@ -238,6 +240,7 @@ def test_migration_six_preserves_all_previous_tables_and_backup(tmp_path, monkey
     migrations = database_module.MIGRATIONS
     with monkeypatch.context() as old:
         old.setattr(database_module, 'MIGRATIONS', migrations[:5])
+        use_legacy_card_fields(old)
         with Database(path) as db:
             db.connection.execute("INSERT INTO training_center(id,full_name) VALUES (1,'Тестовый центр')")
             db.connection.execute("INSERT INTO students(surname,first_name,birth_date) VALUES ('Тест','Пример','1990-01-01')")
@@ -246,11 +249,12 @@ def test_migration_six_preserves_all_previous_tables_and_backup(tmp_path, monkey
             ProgramRepository(db.connection).save(Program(full_name='Тестовая ПО', direction='po', kind='po_retraining', hours=80, active=False))
             before = {name: db.connection.execute(f'SELECT * FROM {name}').fetchall() for name in
                       ('schema_migrations', 'students', 'counterparties', 'programs', 'training_center')}
+            columns = {table: legacy_columns(db.connection, table) for table in before}
     for _ in range(2):
         with Database(path) as db:
             assert db.connection.execute('SELECT max(version) FROM schema_migrations').fetchone() == (len(migrations),)
             for table, rows in before.items():
-                stored = db.connection.execute(f'SELECT * FROM {table}').fetchall()
+                stored = db.connection.execute(f'SELECT {columns[table]} FROM {table}').fetchall()
                 assert (stored[:5] if table == 'schema_migrations' else stored) == rows
             assert db.connection.execute('PRAGMA foreign_key_check').fetchall() == []
     backups = list((tmp_path / 'migration-backups').glob('*.sqlite3'))

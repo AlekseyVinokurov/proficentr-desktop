@@ -10,6 +10,8 @@ from uuid import uuid4
 from docx import Document
 import pytest
 
+from legacy_schema import legacy_columns, remove_preparation_schema
+
 from test_contracts import records
 from test_enrollment_orders import orders
 from test_attestations import attestations, draft as protocol_draft, register as protocol_register, sign as protocol_sign
@@ -255,7 +257,7 @@ def test_numbers_history_uniqueness_and_independence(completions):
     with pytest.raises(CompletionError): register(r,draft(r,historical_number='архив   / 22'))
     for sql in ('DELETE FROM completion_sequences','UPDATE completion_sequences SET last_value=1','INSERT OR REPLACE INTO completion_sequences VALUES (2020,1)'):
         with pytest.raises(sqlite3.IntegrityError),r.db.connection: r.db.connection.execute(sql)
-    for table,rows in other.items(): assert r.db.connection.execute(f'SELECT * FROM {table}').fetchall()==rows
+    for table,rows in other.items(): assert r.db.connection.execute(f'SELECT {columns[table]} FROM {table}').fetchall()==rows
 
 
 def test_simultaneous_registration_numbers(completions):
@@ -367,6 +369,7 @@ def test_migration11_preserves_v10_data_and_backup(completions,tmp_path,monkeypa
     with Database(path) as old:
         r.db.connection.backup(old.connection)
         with old.connection:
+            remove_preparation_schema(old.connection)
             old.connection.execute('DROP TABLE frdo_templates')
             for name, in old.connection.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND (name LIKE 'issued_%' OR name LIKE 'transfer_%' OR name LIKE 'transfers_%' OR name LIKE 'evidence_%')").fetchall():old.connection.execute(f'DROP TRIGGER {name}')
             for table in ('transfer_evidence','document_transfers','issued_documents','issued_sequences'):old.connection.execute(f'DROP TABLE IF EXISTS {table}')
@@ -374,12 +377,13 @@ def test_migration11_preserves_v10_data_and_backup(completions,tmp_path,monkeypa
             for table in ('training_completions','completion_order_trainings','completion_orders','completion_sequences'): old.connection.execute(f'DROP TABLE {table}')
             old.connection.execute('DELETE FROM schema_migrations WHERE version>=11')
         tables=[row[0] for row in old.connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
+        columns = {table: legacy_columns(old.connection, table) for table in tables}
         before={table:old.connection.execute(f'SELECT * FROM {table}').fetchall() for table in tables}
     monkeypatch.setattr(db_module,'MIGRATIONS',migrations)
     with Database(path) as db:
         assert db.connection.execute('SELECT max(version) FROM schema_migrations').fetchone()==(len(migrations),)
         for table,rows in before.items():
-            if table!='schema_migrations': assert db.connection.execute(f'SELECT * FROM {table}').fetchall()==rows
+            if table!='schema_migrations': assert db.connection.execute(f'SELECT {columns[table]} FROM {table}').fetchall()==rows
         assert db.connection.execute('PRAGMA integrity_check').fetchall()==[('ok',)]
         assert not db.connection.execute('PRAGMA foreign_key_check').fetchall()
         assert CompletionRepository(db.connection,r.storage).attestations.verify_document(r.protocol.id).read_bytes()==r.protocols.verify_document(r.protocol.id).read_bytes()

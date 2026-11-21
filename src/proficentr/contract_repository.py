@@ -95,7 +95,7 @@ class ContractRepository:
             validate_dates(item['start_date'], item['end_date'])
             try:
                 snapshot = json.loads(item['program_snapshot'])
-                if set(snapshot) != {'full_name', 'direction', 'kind', 'hours', 'code', 'edition', 'qualification', 'grade'}:
+                if set(snapshot) - {'dpo_area', 'dpo_group', 'po_profession'} != {'full_name', 'direction', 'kind', 'hours', 'code', 'edition', 'qualification', 'grade'}:
                     raise ValueError
             except (ValueError, TypeError):
                 raise ContractError('Повреждён снимок программы обучения.') from None
@@ -184,7 +184,7 @@ class ContractRepository:
         if not contract.payment_terms:
             raise ContractError('Укажите условия оплаты.')
         snapshot = json.loads(trainings[0]['program_snapshot'])
-        context['program'] = {('name' if key == 'full_name' else key): value for key, value in snapshot.items()}
+        context['program'] = {('name' if key == 'full_name' else key): value for key, value in snapshot.items() if key not in ('dpo_area', 'dpo_group', 'po_profession')}
         for key in ('start_date', 'end_date'):
             values = {row[key] for row in trainings}
             context['training'][key] = values.pop() if len(values) == 1 else ''

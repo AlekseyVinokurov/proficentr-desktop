@@ -3,6 +3,8 @@ import sqlite3
 
 import pytest
 
+from legacy_schema import use_legacy_card_fields
+
 from proficentr import database as module
 from proficentr.programs import DIRECTIONS, KINDS, Program, hours_from_text
 from proficentr.program_repository import ProgramRepository, DuplicateProgramError, ProgramRepositoryError
@@ -151,6 +153,7 @@ def test_migration_five_preserves_existing_registers_and_backup(tmp_path,monkeyp
     migrations=module.MIGRATIONS
     with monkeypatch.context() as old:
         old.setattr(module,'MIGRATIONS',migrations[:4])
+        use_legacy_card_fields(old)
         with Database(path) as db:
             student=StudentRepository(db.connection).save(Student(surname='Тестовый',first_name='Пример',birth_date='1990-01-01'))
             customer=CounterpartyRepository(db.connection).save(Counterparty(full_name='Тестовый заказчик'))

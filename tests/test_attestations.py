@@ -8,6 +8,8 @@ from uuid import uuid4
 from docx import Document
 import pytest
 
+from legacy_schema import legacy_columns, remove_preparation_schema
+
 from test_contracts import records
 from test_enrollment_orders import orders, draft as order_draft, register as order_register, sign as order_sign
 from proficentr.attestations import AttestationProtocol, AttestationResult, AttestationError
@@ -274,6 +276,7 @@ def test_migration10_preserves_existing_v9_and_backup(attestations,tmp_path,monk
         # An actual version 9 database with a signed order and its protected enrollment.
         r.db.connection.backup(old.connection)
         with old.connection:
+            remove_preparation_schema(old.connection)
             old.connection.execute('DROP TABLE frdo_templates')
             for name, in old.connection.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND (name LIKE 'issued_%' OR name LIKE 'transfer_%' OR name LIKE 'transfers_%' OR name LIKE 'evidence_%')").fetchall():old.connection.execute(f'DROP TRIGGER {name}')
             for table in ('transfer_evidence','document_transfers','issued_documents','issued_sequences'):old.connection.execute(f'DROP TABLE IF EXISTS {table}')
@@ -282,12 +285,13 @@ def test_migration10_preserves_existing_v9_and_backup(attestations,tmp_path,monk
             for table in ('attestation_results','attestation_protocols','attestation_sequences'): old.connection.execute(f'DROP TABLE {table}')
             old.connection.execute('DELETE FROM schema_migrations WHERE version>=10')
         tables=[row[0] for row in old.connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
+        columns = {table: legacy_columns(old.connection, table) for table in tables}
         before={table:old.connection.execute(f'SELECT * FROM {table}').fetchall() for table in tables}
     monkeypatch.setattr(db_module,'MIGRATIONS',all_migrations)
     with Database(path) as upgraded:
         assert upgraded.connection.execute('SELECT max(version) FROM schema_migrations').fetchone()==(len(all_migrations),)
         for table in tables:
-            if table!='schema_migrations': assert upgraded.connection.execute(f'SELECT * FROM {table}').fetchall()==before[table]
+            if table!='schema_migrations': assert upgraded.connection.execute(f'SELECT {columns[table]} FROM {table}').fetchall()==before[table]
         assert upgraded.connection.execute('PRAGMA integrity_check').fetchall()==[('ok',)]
         assert not upgraded.connection.execute('PRAGMA foreign_key_check').fetchall()
     backups=list((tmp_path/'migration-backups').glob('*.sqlite3')); assert backups

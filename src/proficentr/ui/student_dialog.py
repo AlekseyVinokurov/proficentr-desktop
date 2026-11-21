@@ -123,7 +123,7 @@ class StudentDialog(QDialog):
 
     def values(self):
         values = {field: (edit.toPlainText() if field == "note" else edit.text()) for field, edit in self.fields.items()}
-        return Student(id=self.original.id, **values)
+        return Student(**(asdict(self.original) | values))
 
     def is_dirty(self):
         return asdict(self.values()) != asdict(self.original)

@@ -3,6 +3,8 @@ import sqlite3
 
 import pytest
 
+from legacy_schema import use_legacy_card_fields
+
 from proficentr import database as module
 from proficentr.counterparties import Counterparty, validate_counterparty
 from proficentr.counterparty_repository import CounterpartyRepository, CounterpartyRepositoryError, DuplicateCounterpartyError
@@ -150,6 +152,7 @@ def test_upgrade_from_schema_three_preserves_records_and_backup(tmp_path, monkey
     migrations = module.MIGRATIONS
     with monkeypatch.context() as previous:
         previous.setattr(module, 'MIGRATIONS', migrations[:3])
+        use_legacy_card_fields(previous)
         with Database(path) as db:
             student = StudentRepository(db.connection).save(Student(surname='Тестовый', first_name='Пример', birth_date='1990-01-01'))
             db.connection.execute("INSERT INTO training_center(id,full_name) VALUES (1,'Пример центра')")

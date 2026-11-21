@@ -34,6 +34,9 @@ class Program:
     approval_details: str = ""
     edition: str = ""
     note: str = ""
+    dpo_area: str = ""
+    dpo_group: str = ""
+    po_profession: str = ""
     active: bool = True
 
 
@@ -51,9 +54,12 @@ def hours_from_text(value: str) -> int:
 
 
 def validate_program(program: Program) -> Program:
+    for name in ('dpo_area', 'dpo_group', 'po_profession'):
+        if not isinstance(getattr(program, name), str) or len(getattr(program, name)) > 1000:
+            raise ValueError("Классификаторы программы должны быть строками длиной до 1000 символов.")
     values = asdict(program)
     for field, value in values.items():
-        if field not in {"id", "hours", "active"}:
+        if field not in {"id", "hours", "active", "dpo_area", "dpo_group", "po_profession"}:
             values[field] = " ".join(value.split()) if field != "note" else "\n".join(
                 " ".join(line.split()) for line in value.strip().splitlines()
             )

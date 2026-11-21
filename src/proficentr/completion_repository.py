@@ -190,7 +190,7 @@ class CompletionRepository:
         context['students'] = students
         if len(students) == 1:
             context['student'] = {k:students[0][k] for k in SCHEMA['student']}
-        context['program'] = {('name' if k == 'full_name' else k):v for k,v in json.loads(trainings[0]['program_snapshot']).items()}
+        context['program'] = {('name' if k == 'full_name' else k):v for k,v in json.loads(trainings[0]['program_snapshot']).items() if k not in ('dpo_area', 'dpo_group', 'po_profession')}
         for field in ('start_date','end_date'):
             values = {t[field] for t in trainings}
             context['training'][field] = next(iter(values)) if len(values) == 1 else ''

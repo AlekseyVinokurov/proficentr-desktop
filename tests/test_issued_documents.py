@@ -9,6 +9,8 @@ from uuid import uuid4
 from docx import Document
 from openpyxl import load_workbook
 import pytest
+
+from legacy_schema import legacy_columns, remove_preparation_schema
 from PySide6.QtCore import QBuffer,QIODevice
 from PySide6.QtGui import QImage,QColor
 
@@ -309,17 +311,19 @@ def test_migration12_preserves_v11_and_storage_move(issued,tmp_path,monkeypatch)
     with Database(path) as old:
         r.db.connection.backup(old.connection)
         with old.connection:
+            remove_preparation_schema(old.connection)
             old.connection.execute('DROP TABLE frdo_templates')
             for name, in old.connection.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND (name LIKE 'issued_%' OR name LIKE 'transfer_%' OR name LIKE 'transfers_%' OR name LIKE 'evidence_%')").fetchall():old.connection.execute(f'DROP TRIGGER {name}')
             for table in ('transfer_evidence','document_transfers','issued_documents','issued_sequences'):old.connection.execute(f'DROP TABLE {table}')
             old.connection.execute('DELETE FROM schema_migrations WHERE version>=12')
         tables=[r[0] for r in old.connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
+        columns = {table: legacy_columns(old.connection, table) for table in tables}
         before={t:old.connection.execute(f'SELECT * FROM {t}').fetchall() for t in tables}
     monkeypatch.setattr(db_module,'MIGRATIONS',migrations)
     with Database(path) as db:
         assert db.connection.execute('SELECT max(version) FROM schema_migrations').fetchone()==(len(migrations),)
         for t,rows in before.items():
-            if t!='schema_migrations':assert db.connection.execute(f'SELECT * FROM {t}').fetchall()==rows
+            if t!='schema_migrations':assert db.connection.execute(f'SELECT {columns[t]} FROM {t}').fetchall()==rows
         assert db.connection.execute('PRAGMA integrity_check').fetchall()==[('ok',)] and not db.connection.execute('PRAGMA foreign_key_check').fetchall()
     with sqlite3.connect(next((tmp_path/'migration-backups').glob('*.sqlite3'))) as db:assert db.execute('SELECT max(version) FROM schema_migrations').fetchone()==(11,)
     d=register(r,draft(r));e=r.delivery.add(event(d),evidence=png(tmp_path/'source.png'));file=r.delivery.evidence(e.id)[0]

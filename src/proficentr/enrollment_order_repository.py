@@ -167,7 +167,7 @@ class EnrollmentOrderRepository:
             self._entity('programs', ('id',), row['program_id'])
             validate_dates(row['start_date'], row['end_date'])
             snapshot = json.loads(row['program_snapshot'])
-            if set(snapshot) != {'full_name','direction','kind','hours','code','edition','qualification','grade'}:
+            if set(snapshot) - {'dpo_area', 'dpo_group', 'po_profession'} != {'full_name','direction','kind','hours','code','edition','qualification','grade'}:
                 raise OrderError('Повреждён снимок программы.')
             if result and (row['program_id'], snapshot) != (result[0]['program_id'], json.loads(result[0]['program_snapshot'])):
                 raise OrderError('Нужны одна программа и одинаковый снимок её редакции.')
@@ -230,7 +230,7 @@ class EnrollmentOrderRepository:
         context['students'] = students
         if len(students) == 1:
             context['student'] = {key: students[0][key] for key in SCHEMA['student']}
-        context['program'] = {('name' if key == 'full_name' else key): value for key, value in json.loads(trainings[0]['program_snapshot']).items()}
+        context['program'] = {('name' if key == 'full_name' else key): value for key, value in json.loads(trainings[0]['program_snapshot']).items() if key not in ('dpo_area', 'dpo_group', 'po_profession')}
         mixed = any(len({t[key] for t in trainings}) > 1 for key in ('start_date','end_date'))
         for key in ('start_date','end_date'):
             context['training'][key] = '' if mixed else trainings[0][key]

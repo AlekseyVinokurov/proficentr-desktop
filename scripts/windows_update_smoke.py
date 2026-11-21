@@ -22,6 +22,7 @@ from proficentr.training_repository import TrainingRepository
 from proficentr.trainings import TrainingGroup, Training
 from proficentr.document_templates import TemplateRepository
 from proficentr.frdo_templates import FrdoTemplateRepository
+from proficentr.frdo_preparation import FrdoPreparationRepository
 from proficentr.contract_repository import ContractRepository
 from proficentr.issued_documents import IssuedDocument, TransferEvent
 from proficentr.issued_repository import IssuedDocumentRepository
@@ -76,7 +77,7 @@ def main():
             archived_group = trainings.set_active(archived_group.id, False)
             individual_training = trainings.save(Training(student_id=1, program_id=active_program.id,
                                                           start_date='2018-01-01', end_date='2018-02-01'))
-        synthetic_frdo = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'tests' / 'frdo_fixtures.py'))['synthetic_template']
+        synthetic_frdo = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'tests' / 'frdo_fixtures.py'))['preparation_template']
         with Database(storage.database_path) as db:
             frdo = FrdoTemplateRepository(db.connection, storage)
             frdo_versions = {}
@@ -190,6 +191,12 @@ def main():
             issued_template = issued.templates.register(source_template, 'dpo_upskilling_certificate', 'synthetic', 'Synthetic issued certificate')
             issued_document = issued.save(IssuedDocument(training_id=individual_training.id, document_date='2020-03-04', blank_series='TEST', blank_number='0001'))
             issued_document = issued.register(issued_document.id, issued.prepare(issued_document.id).signature)
+            preparation = FrdoPreparationRepository(db.connection, storage)
+            prepared_frdo = preparation.save_details(issued_document.id,
+                personal={'sex': 'Муж', 'citizenship_code': '000'},
+                training={'form': 'Очная', 'funding': 'Платное обучение', 'relations': 'в образовательной организации', 'patronymic': 'Нет'},
+                expected_signature=preparation.review(issued_document.id).signature)
+            frdo_history = db.connection.execute('SELECT * FROM frdo_change_history').fetchall()
             issued_bytes = issued.verify_document(issued_document.id).read_bytes()
             issued_sequence = db.connection.execute('SELECT * FROM issued_sequences').fetchall()
             issued_template_bytes = (storage.root / issued_template.relative_path).read_bytes()
@@ -265,6 +272,11 @@ def main():
                     assert frdo.active(kind) == version
                     assert frdo.source(version) == frdo_bytes[kind]
                     assert frdo.structure(kind).dictionaries
+                preparation = FrdoPreparationRepository(db.connection, storage)
+                current_frdo = preparation.review(issued_document.id)
+                assert current_frdo.cells == prepared_frdo.cells and current_frdo.signature == prepared_frdo.signature
+                assert current_frdo.values['AE'] == '000' and current_frdo.values['AB'] == 'Очная'
+                assert db.connection.execute('SELECT * FROM frdo_change_history').fetchall() == frdo_history
                 contracts = ContractRepository(db.connection, storage)
                 assert contracts.load(registered_contract.id) == registered_contract
                 assert contracts.load(annulled_contract.id) == annulled_contract
