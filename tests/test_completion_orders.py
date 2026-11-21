@@ -257,7 +257,7 @@ def test_numbers_history_uniqueness_and_independence(completions):
     with pytest.raises(CompletionError): register(r,draft(r,historical_number='архив   / 22'))
     for sql in ('DELETE FROM completion_sequences','UPDATE completion_sequences SET last_value=1','INSERT OR REPLACE INTO completion_sequences VALUES (2020,1)'):
         with pytest.raises(sqlite3.IntegrityError),r.db.connection: r.db.connection.execute(sql)
-    for table,rows in other.items(): assert r.db.connection.execute(f'SELECT {columns[table]} FROM {table}').fetchall()==rows
+    for table,rows in other.items(): assert r.db.connection.execute(f'SELECT * FROM {table}').fetchall()==rows
 
 
 def test_simultaneous_registration_numbers(completions):
