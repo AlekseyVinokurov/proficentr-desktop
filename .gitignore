@@ -37,3 +37,6 @@ exports/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Пользовательские исходные материалы ФИС ФРДО, включая Zone.Identifier
+/references/frdo/

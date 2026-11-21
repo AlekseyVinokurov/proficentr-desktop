@@ -469,6 +469,13 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
      """CREATE TRIGGER issued_sequences_insert BEFORE INSERT ON issued_sequences WHEN
     EXISTS(SELECT 1 FROM issued_sequences WHERE kind=NEW.kind AND year=NEW.year AND last_value>NEW.last_value)
     BEGIN SELECT RAISE(ABORT,'Sequence cannot decrease'); END"""),
+    ("""CREATE TABLE frdo_templates (
+        id INTEGER PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('dpo','po')),
+        version INTEGER NOT NULL CHECK(version>0), original_name TEXT NOT NULL,
+        relative_path TEXT NOT NULL UNIQUE, sha256 TEXT NOT NULL CHECK(length(sha256)=64),
+        added_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)), UNIQUE(kind,version))""",
+     "CREATE UNIQUE INDEX frdo_templates_active ON frdo_templates(kind) WHERE active=1"),
 )
 
 

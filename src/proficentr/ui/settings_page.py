@@ -14,6 +14,8 @@ from proficentr.ui.training_center_page import TrainingCenterPage
 from proficentr.ui.about_page import AboutPage
 from proficentr.document_templates import TemplateRepository
 from proficentr.ui.templates_page import TemplatesPage
+from proficentr.frdo_templates import FrdoTemplateRepository
+from proficentr.ui.frdo_page import FrdoPage
 
 
 class SettingsPage(QWidget):
@@ -58,6 +60,8 @@ class SettingsPage(QWidget):
         self.tabs.addTab(self.about_page, "О программе")
         self.templates_page = TemplatesPage(TemplateRepository(database.connection, storage) if database else None)
         self.tabs.addTab(self.templates_page, "Шаблоны документов")
+        self.frdo_page = FrdoPage(FrdoTemplateRepository(database.connection, storage) if database else None)
+        self.tabs.addTab(self.frdo_page, "ФИС ФРДО")
         self._tab_index = 0
         self.tabs.currentChanged.connect(self._change_tab)
 

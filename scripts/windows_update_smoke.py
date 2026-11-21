@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import runpy
 from pathlib import Path
 import shutil
 import subprocess
@@ -20,6 +21,7 @@ from proficentr.program_repository import ProgramRepository
 from proficentr.training_repository import TrainingRepository
 from proficentr.trainings import TrainingGroup, Training
 from proficentr.document_templates import TemplateRepository
+from proficentr.frdo_templates import FrdoTemplateRepository
 from proficentr.contract_repository import ContractRepository
 from proficentr.issued_documents import IssuedDocument, TransferEvent
 from proficentr.issued_repository import IssuedDocumentRepository
@@ -74,6 +76,16 @@ def main():
             archived_group = trainings.set_active(archived_group.id, False)
             individual_training = trainings.save(Training(student_id=1, program_id=active_program.id,
                                                           start_date='2018-01-01', end_date='2018-02-01'))
+        synthetic_frdo = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'tests' / 'frdo_fixtures.py'))['synthetic_template']
+        with Database(storage.database_path) as db:
+            frdo = FrdoTemplateRepository(db.connection, storage)
+            frdo_versions = {}
+            frdo_bytes = {}
+            for kind in ('dpo', 'po'):
+                source = root / f'synthetic-{kind}.xlsx'
+                source.write_bytes(synthetic_frdo(kind))
+                frdo_versions[kind] = frdo.register(source, kind)
+                frdo_bytes[kind] = source.read_bytes()
         source_template = root / 'synthetic-template.docx'
         sample_docx = Document()
         sample_docx.add_paragraph('TEST {{ center.full_name }} - {{ student.full_name }}')
@@ -248,6 +260,11 @@ def main():
                 # --smoke-test generated a new fictional DOCX inside the frozen EXE.
                 assert len(list((storage.root / 'exports' / 'template-tests').glob('*.docx'))) >= 3
                 assert templates.test_document(second_template.id).is_file()
+                frdo = FrdoTemplateRepository(db.connection, storage)
+                for kind, version in frdo_versions.items():
+                    assert frdo.active(kind) == version
+                    assert frdo.source(version) == frdo_bytes[kind]
+                    assert frdo.structure(kind).dictionaries
                 contracts = ContractRepository(db.connection, storage)
                 assert contracts.load(registered_contract.id) == registered_contract
                 assert contracts.load(annulled_contract.id) == annulled_contract

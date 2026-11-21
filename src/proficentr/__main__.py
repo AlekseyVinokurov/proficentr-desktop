@@ -77,6 +77,10 @@ def main() -> int:
                 templates = window.settings_page.templates_page.repository
                 for version in templates.list_versions():
                     templates.test_document(version.id)
+                frdo = window.settings_page.frdo_page.repository
+                for kind in ('dpo', 'po'):
+                    if frdo.active(kind) is not None:
+                        frdo.structure(kind)
                 contracts = window.contracts_page.repository
                 for row in contracts.search():
                     if row[-1] != 'draft':
