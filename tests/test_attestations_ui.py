@@ -13,6 +13,8 @@ def enroll(window, group, members):
     repo.templates.register(source,'enrollment_order','dpo-group','Вымышленный приказ')
     p=repo.save(EnrollmentOrder(order_date='2020-01-01',kind='group',group_id=group.id),[t.id for t in members])
     p=repo.register(p.id,repo.prepare(p.id).signature)
+    from admission_fixtures import ready_for_admission
+    ready_for_admission(repo.connection,repo.storage,[t.id for t in members])
     repo.confirm_signing(p.id,signed_date='2020-01-02',confirmed_by='Ответственный',grounds_checked=True,education_checked=True)
     repo.templates.register(source,'protocol_dpo','standard','Вымышленный протокол')
 
