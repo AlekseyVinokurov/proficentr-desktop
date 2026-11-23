@@ -18,6 +18,8 @@ def use_legacy_card_fields(patch):
 
 
 def remove_preparation_schema(connection):
+    connection.execute('DROP TABLE frdo_package_documents')
+    connection.execute('DROP TABLE frdo_packages')
     connection.execute('DROP TABLE frdo_change_history')
     connection.execute('DROP TABLE frdo_training_details')
     for table, fields in NEW_FIELDS.items():

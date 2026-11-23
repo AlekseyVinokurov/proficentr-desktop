@@ -89,12 +89,19 @@ def main() -> int:
                 for row in orders.search():
                     if row[-1] != "draft":
                         orders.verify_document(row[0])
+                exports = window.frdo_preparation_page.exports
+                for package in exports.packages():
+                    exports.file(package.id)
                 issued = window.issued_documents_page.repository
                 for row in issued.search(state='registered'):
                     issued.verify_document(row[0])
                     registered = issued.load(row[0])
                     if frdo.active(registered.direction) is not None:
-                        window.frdo_preparation_page.repository.review(row[0])
+                        prepared = window.frdo_preparation_page.repository.review(row[0])
+                        if prepared.ready:
+                            from proficentr.frdo_export import fill_xlsx
+                            template = frdo.active(registered.direction)
+                            fill_xlsx(frdo.source(template), registered.direction, [prepared])
                     for event in window.issued_documents_page.delivery.history(row[0]):
                         for evidence in window.issued_documents_page.delivery.evidence(event.id):
                             window.issued_documents_page.delivery.verify_evidence(evidence[0])

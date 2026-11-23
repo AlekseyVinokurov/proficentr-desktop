@@ -501,6 +501,40 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
         (SELECT 1 FROM frdo_change_history WHERE id=NEW.id)
         BEGIN SELECT RAISE(ABORT,'FRDO history is immutable'); END"""),
 
+    ("""CREATE TABLE frdo_packages (
+        id TEXT PRIMARY KEY NOT NULL, request_key TEXT NOT NULL, part_index INTEGER NOT NULL CHECK(part_index>=0),
+        kind TEXT NOT NULL CHECK(kind IN ('dpo','po')), ogrn TEXT NOT NULL, kpp TEXT NOT NULL,
+        issue_year INTEGER NOT NULL, number INTEGER NOT NULL CHECK(number>0),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        template_id INTEGER NOT NULL REFERENCES frdo_templates(id), template_version INTEGER NOT NULL,
+        template_sha256 TEXT NOT NULL, relative_path TEXT NOT NULL UNIQUE, sha256 TEXT NOT NULL,
+        row_count INTEGER NOT NULL CHECK(row_count>0 AND row_count<=CASE kind WHEN 'dpo' THEN 1000 ELSE 1001 END), UNIQUE(ogrn,kpp,issue_year,number), UNIQUE(request_key,part_index))""",
+     """CREATE TABLE frdo_package_documents (
+        package_id TEXT NOT NULL REFERENCES frdo_packages(id), position INTEGER NOT NULL CHECK(position>=0),
+        document_id INTEGER NOT NULL REFERENCES issued_documents(id), source_signature TEXT NOT NULL,
+        PRIMARY KEY(package_id,position), UNIQUE(package_id,document_id))""",
+     "CREATE INDEX frdo_package_document_lookup ON frdo_package_documents(document_id)",
+     """CREATE TRIGGER frdo_packages_no_update BEFORE UPDATE ON frdo_packages
+        BEGIN SELECT RAISE(ABORT,'FRDO package is immutable'); END""",
+     """CREATE TRIGGER frdo_packages_no_delete BEFORE DELETE ON frdo_packages
+        BEGIN SELECT RAISE(ABORT,'FRDO package is immutable'); END""",
+     """CREATE TRIGGER frdo_packages_no_replace BEFORE INSERT ON frdo_packages WHEN EXISTS
+        (SELECT 1 FROM frdo_packages WHERE id=NEW.id OR relative_path=NEW.relative_path
+         OR (ogrn=NEW.ogrn AND kpp=NEW.kpp AND issue_year=NEW.issue_year AND number=NEW.number)
+         OR (request_key=NEW.request_key AND part_index=NEW.part_index))
+        BEGIN SELECT RAISE(ABORT,'FRDO package is immutable'); END""",
+     """CREATE TRIGGER frdo_package_documents_no_append BEFORE INSERT ON frdo_package_documents WHEN
+        NEW.position >= (SELECT row_count FROM frdo_packages WHERE id=NEW.package_id)
+        BEGIN SELECT RAISE(ABORT,'FRDO package is full'); END""",
+     """CREATE TRIGGER frdo_package_documents_no_update BEFORE UPDATE ON frdo_package_documents
+        BEGIN SELECT RAISE(ABORT,'FRDO package contents are immutable'); END""",
+     """CREATE TRIGGER frdo_package_documents_no_delete BEFORE DELETE ON frdo_package_documents
+        BEGIN SELECT RAISE(ABORT,'FRDO package contents are immutable'); END""",
+     """CREATE TRIGGER frdo_package_documents_no_replace BEFORE INSERT ON frdo_package_documents WHEN EXISTS
+        (SELECT 1 FROM frdo_package_documents WHERE package_id=NEW.package_id
+         AND (position=NEW.position OR document_id=NEW.document_id))
+        BEGIN SELECT RAISE(ABORT,'FRDO package contents are immutable'); END"""),
+
 )
 
 

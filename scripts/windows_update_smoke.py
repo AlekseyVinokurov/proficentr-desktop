@@ -57,8 +57,8 @@ def main():
         os.environ['PROFICENTR_DATA_DIR']=str(root/'user-data')
         storage=Storage(root/'user-data');storage.initialize()
         with Database(storage.database_path) as db:
-            db.connection.execute("INSERT INTO training_center(id,full_name) VALUES (1,'Synthetic CI center')")
-            db.connection.execute("INSERT INTO students(surname,first_name,birth_date) VALUES ('Synthetic','Student','1990-01-01')")
+            db.connection.execute("INSERT INTO training_center(id,full_name,ogrn,kpp) VALUES (1,'Synthetic CI center','1000000000000','000000001')")
+            db.connection.execute("INSERT INTO students(surname,first_name,birth_date) VALUES ('Тестов','Иван','1990-01-01')")
             db.connection.commit()
         with Database(storage.database_path) as db:
             counterparty = CounterpartyRepository(db.connection).save(Counterparty(full_name='Synthetic CI customer'))
@@ -194,8 +194,13 @@ def main():
             preparation = FrdoPreparationRepository(db.connection, storage)
             prepared_frdo = preparation.save_details(issued_document.id,
                 personal={'sex': 'Муж', 'citizenship_code': '000'},
-                training={'form': 'Очная', 'funding': 'Платное обучение', 'relations': 'в образовательной организации', 'patronymic': 'Нет'},
+                training={'form': 'Очная', 'funding': 'Платное обучение', 'relations': 'в образовательной организации', 'patronymic': 'Нет', 'qualification': 'Нет'},
                 expected_signature=preparation.review(issued_document.id).signature)
+            from proficentr.frdo_export import FrdoExportRepository
+            frdo_exports = FrdoExportRepository(db.connection, storage)
+            assert prepared_frdo.ready, prepared_frdo.messages()
+            frdo_package = frdo_exports.create(frdo_exports.select([prepared_frdo]))[0]
+            frdo_package_bytes = frdo_exports.file(frdo_package.id).read_bytes()
             frdo_history = db.connection.execute('SELECT * FROM frdo_change_history').fetchall()
             issued_bytes = issued.verify_document(issued_document.id).read_bytes()
             issued_sequence = db.connection.execute('SELECT * FROM issued_sequences').fetchall()
@@ -248,7 +253,7 @@ def main():
             assert (storage.root/'attachments'/'synthetic.txt').read_text()=='preserve me'
             with Database(storage.database_path) as db:
                 assert db.connection.execute('SELECT full_name FROM training_center').fetchone()==('Synthetic CI center',)
-                assert db.connection.execute('SELECT surname FROM students').fetchall()==[('Synthetic',)]
+                assert db.connection.execute('SELECT surname FROM students').fetchall()==[('Тестов',)]
                 assert CounterpartyRepository(db.connection).load(counterparty.id) == counterparty
                 assert ProgramRepository(db.connection).search() == [active_program]
                 assert ProgramRepository(db.connection).load(archived_program.id) == archived_program
@@ -274,6 +279,10 @@ def main():
                     assert frdo.structure(kind).dictionaries
                 preparation = FrdoPreparationRepository(db.connection, storage)
                 current_frdo = preparation.review(issued_document.id)
+                frdo_exports = FrdoExportRepository(db.connection, storage)
+                assert frdo_exports.load(frdo_package.id) == frdo_package
+                assert frdo_exports.file(frdo_package.id).read_bytes() == frdo_package_bytes
+                assert frdo_exports.create(frdo_exports.select([current_frdo])) == [frdo_package]
                 assert current_frdo.cells == prepared_frdo.cells and current_frdo.signature == prepared_frdo.signature
                 assert current_frdo.values['AE'] == '000' and current_frdo.values['AB'] == 'Очная'
                 assert db.connection.execute('SELECT * FROM frdo_change_history').fetchall() == frdo_history

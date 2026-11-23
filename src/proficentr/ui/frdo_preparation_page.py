@@ -1,12 +1,13 @@
-"""Предварительный контроль сведений ФРДО, без выгрузки XLSX."""
+"""Подготовка сведений и неизменяемых XLSX ФРДО."""
 
 from datetime import date
 import sqlite3
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QComboBox, QDateEdit, QDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDateEdit, QDialog, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
     QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QTabWidget, QVBoxLayout, QWidget)
 
+from proficentr.frdo_export import FrdoExportRepository, PreviousExportError
 from proficentr.frdo_validation import FIELDS
 from proficentr.ui.groups_page import make_table, fill_table, selected_id
 from proficentr.ui.student_dialog import StudentDialog
@@ -181,6 +182,7 @@ class FrdoPreparationPage(QWidget):
         super().__init__()
         self.repository = repository
         self.records = {}
+        self.exports = FrdoExportRepository(repository.connection, repository.storage) if repository else None
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel('Подготовка ФРДО'))
         filters = QHBoxLayout()
@@ -205,11 +207,12 @@ class FrdoPreparationPage(QWidget):
         self.check_button.clicked.connect(self.refresh)
         filters.addWidget(self.check_button)
         layout.addLayout(filters)
-        self.state = QLabel('Выберите категорию и период выдачи. XLSX на этом этапе не формируется.')
+        self.state = QLabel('Выберите категорию и период выдачи, проверьте и выделите документы для XLSX.')
         self.state.setWordWrap(True)
         self.state.setTextFormat(Qt.TextFormat.PlainText)
         layout.addWidget(self.state)
         self.table = make_table(['ID', 'Слушатель', 'Документ', 'Дата выдачи', 'Программа', 'Готовность'])
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         layout.addWidget(self.table)
         self.errors = QPlainTextEdit()
         self.errors.setReadOnly(True)
@@ -219,6 +222,31 @@ class FrdoPreparationPage(QWidget):
         self.edit_button.setEnabled(False)
         self.edit_button.clicked.connect(self.open_record)
         layout.addWidget(self.edit_button)
+        actions = QHBoxLayout()
+        self.select_ready_button = QPushButton('Выбрать готовые')
+        self.select_ready_button.clicked.connect(self.select_ready)
+        actions.addWidget(self.select_ready_button)
+        self.export_button = QPushButton('Сформировать XLSX')
+        self.export_button.setEnabled(False)
+        self.export_button.clicked.connect(self.export_selected)
+        actions.addWidget(self.export_button)
+        layout.addLayout(actions)
+        layout.addWidget(QLabel('Сформированные XLSX (подготовлены, приём реестром не подтверждён)'))
+        self.packages_table = make_table(['Пакет', 'Категория', 'Год', 'Документов', 'Создан UTC', 'Файл / состояние'])
+        self.packages_table.setMaximumHeight(180)
+        layout.addWidget(self.packages_table)
+        self.history_state = QLabel()
+        self.history_state.setWordWrap(True)
+        self.history_state.setTextFormat(Qt.TextFormat.PlainText)
+        layout.addWidget(self.history_state)
+        package_actions = QHBoxLayout()
+        self.copy_button = QPushButton('Получить файл пакета')
+        self.copy_button.clicked.connect(self.copy_package)
+        self.restore_button = QPushButton('Восстановить из копии')
+        self.restore_button.clicked.connect(self.restore_package)
+        package_actions.addWidget(self.copy_button)
+        package_actions.addWidget(self.restore_button)
+        layout.addLayout(package_actions)
         self.table.itemSelectionChanged.connect(self.show_errors)
         self.table.itemDoubleClicked.connect(lambda _: self.open_record())
         self.kind.currentIndexChanged.connect(self.invalidate)
@@ -230,10 +258,12 @@ class FrdoPreparationPage(QWidget):
         self.table.setRowCount(0)
         self.errors.clear()
         self.edit_button.setEnabled(False)
+        self.export_button.setEnabled(False)
         self.state.setText('Параметры изменены. Нажмите «Проверить готовность».')
 
     def refresh(self):
         self.invalidate()
+        self.refresh_packages()
         if self.repository is None:
             return
         try:
@@ -251,7 +281,85 @@ class FrdoPreparationPage(QWidget):
     def show_errors(self):
         record = self.records.get(selected_id(self.table))
         self.edit_button.setEnabled(record is not None)
-        self.errors.setPlainText('\n'.join(record.messages()) if record else '')
+        selected = self.selected_records()
+        self.errors.setPlainText('\n'.join(message for row in selected for message in row.messages()))
+        self.export_button.setEnabled(bool(selected) and all(r.ready for r in selected))
+        self.export_button.setToolTip('Выделите готовые документы одной категории и года. Ошибки блокируют весь набор.')
+
+    def selected_records(self):
+        rows = sorted({i.row() for i in self.table.selectedIndexes()})
+        return tuple(self.records[self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)] for row in rows)
+
+    def select_ready(self):
+        self.table.clearSelection()
+        for row in range(self.table.rowCount()):
+            key = self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+            if self.records[key].ready:
+                for col in range(self.table.columnCount()):
+                    item = self.table.item(row, col)
+                    if item:
+                        item.setSelected(True)
+
+    def refresh_packages(self):
+        if self.exports is None:
+            return
+        rows = []
+        try:
+            for p in self.exports.packages():
+                try:
+                    location = str(self.exports.file(p.id))
+                except ERRORS as error:
+                    location = str(error) + '\n' + p.relative_path
+                rows.append((p.id, p.number, {'dpo':'ДПО','po':'ПО'}[p.kind], p.issue_year, p.row_count, p.created_at, location))
+            fill_table(self.packages_table, rows)
+            orphaned = self.exports.unregistered_files()
+            self.history_state.setText(f'Обнаружено незарегистрированных файлов после сбоя: {len(orphaned)}. Они не считаются пакетами; сохраните их отдельно перед повторной подготовкой.' if orphaned else '')
+        except ERRORS as error:
+            self.history_state.setText(str(error))
+
+    def export_selected(self):
+        try:
+            selection = self.exports.select(self.selected_records())
+            try:
+                packages = self.exports.create(selection)
+            except PreviousExportError as error:
+                if QMessageBox.question(self, 'Повторная подготовка ФРДО', str(error),
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+                    return
+                packages = self.exports.create(selection, allow_reexport=True)
+            self.refresh_packages()
+            text = '\n'.join(f'{p.filename} — пакет № {p.number}, документов: {p.row_count}, создан UTC {p.created_at}\n'
+                             f'{self.exports.file(p.id)}' for p in packages)
+            self.state.setText('XLSX подготовлен. Приём ФИС ФРДО не подтверждён.\n' + text)
+        except ERRORS as error:
+            QMessageBox.warning(self, 'Подготовка ФРДО', str(error))
+            self.refresh_packages()
+
+    def copy_package(self):
+        key = selected_id(self.packages_table)
+        if key is None:
+            return
+        try:
+            package = self.exports.load(key)
+            destination, _ = QFileDialog.getSaveFileName(self, 'Получить тот же XLSX', package.filename, 'Excel (*.xlsx)')
+            if destination:
+                self.exports.copy(key, destination)
+                self.state.setText('Сохранена копия исходного пакета: ' + destination)
+        except ERRORS as error:
+            QMessageBox.warning(self, 'Пакет ФРДО', str(error))
+
+    def restore_package(self):
+        key = selected_id(self.packages_table)
+        if key is None:
+            return
+        source, _ = QFileDialog.getOpenFileName(self, 'Исходный XLSX из резервной копии', '', 'Excel (*.xlsx)')
+        if source:
+            try:
+                self.exports.restore(key, source)
+                self.refresh_packages()
+            except ERRORS as error:
+                QMessageBox.warning(self, 'Восстановление ФРДО', str(error))
 
     def open_record(self):
         key = selected_id(self.table)

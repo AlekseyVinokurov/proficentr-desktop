@@ -150,6 +150,21 @@ def test_local_reference_compatibility_and_exact_dictionaries(context, kind, exp
     assert 'Оригинал' in structure.dictionaries['B']
     if kind == 'dpo':
         assert 'Образование и наука' in structure.dictionaries['L']  # structured table reference
+    # Запись проверяется на закрытом оригинале только при его локальном наличии.
+    from types import SimpleNamespace
+    from datetime import datetime
+    from openpyxl import load_workbook
+    from proficentr.frdo_export import fill_xlsx
+    output = fill_xlsx(original,kind,[SimpleNamespace(values={'G':'000001','H':'01.11.2026','F':'=1+1'})])
+    result = inspect_template(output,kind)
+    assert [n for n in structure.ooxml if structure.ooxml[n]!=result.ooxml[n]] == ['xl/worksheets/sheet1.xml']
+    book = load_workbook(BytesIO(output))
+    try:
+        assert book['Шаблон']['G2'].value == '000001'
+        assert book['Шаблон']['H2'].value == datetime(2026,11,1)
+        assert book['Шаблон']['F2'].value == '=1+1' and book['Шаблон']['F2'].data_type == 's'
+    finally:
+        book.close()
 
 
 def test_xml_entity_is_reported_as_validation_error():
