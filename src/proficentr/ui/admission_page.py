@@ -9,7 +9,7 @@ from proficentr.student_repository import StudentRepositoryError
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QCheckBox,QComboBox,QDialog,QFileDialog,QFormLayout,QHBoxLayout,QLabel,
-    QLineEdit,QMessageBox,QPlainTextEdit,QPushButton,QScrollArea,QTabWidget,QVBoxLayout,QWidget)
+    QLineEdit,QMessageBox,QPlainTextEdit,QPushButton,QScrollArea,QGridLayout,QHeaderView,QVBoxLayout,QWidget)
 
 from proficentr.admission import AdmissionRule, STATES, SOURCES, TYPES, BASES, EDUCATION_BASES
 from proficentr.programs import KINDS
@@ -193,52 +193,89 @@ class AdmissionPage(QWidget):
 
     def __init__(self,repository):
         super().__init__();self.repository=repository;self.assessment=None;self.items={}
-        layout=QVBoxLayout(self);tabs=QTabWidget();layout.addWidget(tabs)
-        page=QWidget();body=QVBoxLayout(page);tabs.addTab(page,'Приём на обучение')
-        filters=QHBoxLayout();self.training=QComboBox();self.training.setMinimumContentsLength(20)
+        layout=QVBoxLayout(self)
+        title=QLabel('Приём на обучение')
+        font=title.font();font.setPointSize(20);font.setBold(True);title.setFont(font);layout.addWidget(title)
+        self.empty=QLabel('Чтобы проверить документы для поступления, выберите существующее обучение или создайте новое')
+        self.empty.setWordWrap(True);layout.addWidget(self.empty)
+        filters=QHBoxLayout()
+        self.choose_button=QPushButton('Выбрать обучение');self.choose_button.clicked.connect(self.choose_training)
+        self.new_button=QPushButton('Новое обучение');self.new_button.clicked.connect(self.new_training)
+        filters.addWidget(self.choose_button);filters.addWidget(self.new_button);filters.addStretch();layout.addLayout(filters)
+        # The chooser uses the same training list and repository as the working page.
+        self.training=QComboBox(self);self.training.setMinimumContentsLength(20)
         self.training.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        self.search=QLineEdit();self.search.setPlaceholderText('Поиск слушателя')
-        filters.addWidget(self.search);filters.addWidget(self.training,1)
-        new=QPushButton('Новое обучение');new.clicked.connect(self.new_training);filters.addWidget(new)
-        self.check_button=QPushButton('Проверить');self.check_button.clicked.connect(self.refresh);filters.addWidget(self.check_button)
-        body.addLayout(filters)
+        self.search=QLineEdit(self);self.search.setPlaceholderText('Поиск по ФИО слушателя')
+        self.training.hide();self.search.hide()
+        self.workspace=QWidget();body=QVBoxLayout(self.workspace);body.setContentsMargins(0,0,0,0)
+        self.summary=QLabel();self.summary.setWordWrap(True);self.summary.setTextFormat(Qt.TextFormat.PlainText);body.addWidget(self.summary)
         self.state=QLabel();self.state.setWordWrap(True);self.state.setTextFormat(Qt.TextFormat.PlainText);body.addWidget(self.state)
-        self.table=make_table(['Документ / условие','Источник','Основание','Обязательность','Состояние'])
+        row=QHBoxLayout()
+        self.context_button=QPushButton('Основание обработки ПД и условия приёма');self.context_button.clicked.connect(self.edit_context)
+        self.check_button=QPushButton('Проверить готовность');self.check_button.clicked.connect(self.refresh)
+        row.addWidget(self.context_button);row.addWidget(self.check_button);body.addLayout(row)
+        self.table=make_table(['Документ или условие','Обязательность','Состояние','Действие'])
+        self.table.horizontalHeader().setSectionResizeMode(2,QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(3,QHeaderView.ResizeMode.ResizeToContents)
+        self.table.setMinimumHeight(180)
         body.addWidget(self.table)
         self.problems=QPlainTextEdit();self.problems.setReadOnly(True);self.problems.setMaximumHeight(115);body.addWidget(self.problems)
-        actions=QHBoxLayout()
-        self.context_button=QPushButton('Основание и условия');self.context_button.clicked.connect(self.edit_context)
-        self.record_button=QPushButton('Учесть документ');self.record_button.clicked.connect(self.edit_record)
-        self.form_button=QPushButton('Сформировать DOCX');self.form_button.clicked.connect(self.prepare_form)
-        self.reuse_button=QPushButton('Использовать действующее');self.reuse_button.clicked.connect(self.reuse_document)
-        for b in (self.context_button,self.record_button,self.form_button,self.reuse_button):actions.addWidget(b)
-        body.addLayout(actions)
-        more=QHBoxLayout()
-        self.copy_button=QPushButton('Получить вложение');self.copy_button.clicked.connect(self.copy_document)
+        self.action_hint=QLabel('Выберите документ в перечне, чтобы учесть получение или проверить подтверждение.')
+        self.action_hint.setWordWrap(True);body.addWidget(self.action_hint)
+        actions=QGridLayout()
+        self.record_button=QPushButton('Учесть получение и подписание');self.record_button.clicked.connect(self.edit_record)
+        self.form_button=QPushButton('Сформировать форму DOCX');self.form_button.clicked.connect(self.prepare_form)
+        self.reuse_button=QPushButton('Использовать подтверждение');self.reuse_button.clicked.connect(self.reuse_document)
+        self.copy_button=QPushButton('Получить копию вложения');self.copy_button.clicked.connect(self.copy_document)
         self.revoke_button=QPushButton('Отозвать согласие');self.revoke_button.clicked.connect(self.revoke_document)
-        history=QPushButton('История');history.clicked.connect(self.history)
-        templates=QPushButton('Шаблоны');templates.clicked.connect(self.templates_requested.emit)
-        self.order_button=QPushButton('К зачислению');self.order_button.clicked.connect(self.create_order)
-        for b in (self.copy_button,self.revoke_button,history,templates,self.order_button):more.addWidget(b)
-        body.addLayout(more)
-        rules_page=QWidget();rules_layout=QVBoxLayout(rules_page);tabs.addTab(rules_page,'Требования приёма')
-        label=QLabel('Рабочий перечень разделяет закон, локальные акты и требования программы. Уточните локальный перечень по утверждённым актам организации. Дополнительное согласие не является условием зачисления.')
-        label.setWordWrap(True);rules_layout.addWidget(label)
-        self.rules_table=make_table(['Требование','Вид','Источник','Основание','Версия']);rules_layout.addWidget(self.rules_table)
-        row=QHBoxLayout();add_rule=QPushButton('Добавить требование');add_rule.clicked.connect(lambda:self.edit_rule(False))
-        edit_rule=QPushButton('Новая версия требования');edit_rule.clicked.connect(lambda:self.edit_rule(True))
-        row.addWidget(add_rule);row.addWidget(edit_rule);rules_layout.addLayout(row)
-        self.training.currentIndexChanged.connect(self.refresh);self.table.itemSelectionChanged.connect(self.selection_changed)
-        self.table.itemDoubleClicked.connect(lambda _:self.edit_record())
+        self.history_button=QPushButton('История приёма');self.history_button.clicked.connect(self.history)
+        templates=QPushButton('Подключить утверждённый шаблон');templates.clicked.connect(self.templates_requested.emit)
+        self.order_button=QPushButton('Перейти к зачислению');self.order_button.clicked.connect(self.create_order)
+        for n,button in enumerate((self.form_button,self.record_button,self.reuse_button,self.copy_button,self.revoke_button,self.history_button,templates,self.order_button)):
+            actions.addWidget(button,n//2,n%2)
+        body.addLayout(actions)
+        scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setWidget(self.workspace)
+        self.work_scroll=scroll;layout.addWidget(scroll,1)
+        self.empty_space=QWidget();layout.addWidget(self.empty_space,1)
+        self.table.itemSelectionChanged.connect(self.selection_changed)
+        self.table.itemDoubleClicked.connect(lambda _:self.edit_record() if self.record_button.isEnabled() else None)
         self.search.editingFinished.connect(self.reload_trainings)
         self.reload_trainings()
 
+    def choose_training(self):
+        if not self.repository:return
+        current=self.training.currentData()
+        dialog=QDialog(self);dialog.setWindowTitle('Выбрать обучение');dialog.resize(700,180)
+        layout=QVBoxLayout(dialog)
+        layout.addWidget(QLabel('Найдите слушателя и выберите его обучение:'))
+        layout.addWidget(self.search);layout.addWidget(self.training)
+        empty=QLabel('Нет обучений по этому запросу. Измените поиск или создайте новое обучение.');empty.setWordWrap(True);layout.addWidget(empty)
+        self.search.show();self.training.show()
+        self.reload_trainings()
+        select=buttons(dialog,layout,dialog.accept);select.setText('Выбрать обучение')
+        select.setEnabled(self.training.count()>0)
+        def update_selection(index):
+            select.setEnabled(index>=0);empty.setVisible(self.training.count()==0)
+        def update_search():update_selection(self.training.currentIndex())
+        self.training.currentIndexChanged.connect(update_selection)
+        self.search.editingFinished.connect(update_search)
+        update_search()
+        # A choice is committed only after confirmation; opening/cancelling the picker is read-only.
+        if self.training.currentIndex()<0 and self.training.count():self.training.setCurrentIndex(0)
+        accepted=dialog.exec()==QDialog.DialogCode.Accepted
+        chosen=self.training.currentData() if accepted else current
+        self.training.currentIndexChanged.disconnect(update_selection)
+        self.search.editingFinished.disconnect(update_search)
+        self.training.setParent(self);self.training.hide();self.search.setParent(self);self.search.hide()
+        self.training.setCurrentIndex(-1)
+        self.search.clear();self.reload_trainings(chosen)
+
     def reload_trainings(self,selected=None):
-        current=selected or self.training.currentData();self.training.blockSignals(True);self.training.clear()
+        current=selected if selected is not None else self.training.currentData();self.training.blockSignals(True);self.training.clear()
         if self.repository:
             for key,name,snapshot,start in self.repository.training_options(query=self.search.text()):
                 p=json.loads(snapshot);self.training.addItem(f'{name} — {p["full_name"]} ({start}, ID {key})',key)
-        self.training.setCurrentIndex(self.training.findData(current) if current is not None else (0 if self.training.count() else -1));self.training.blockSignals(False);self.refresh()
+        self.training.setCurrentIndex(self.training.findData(current) if current is not None else -1);self.training.blockSignals(False);self.refresh()
 
     def open_training(self,training_id):
         self.search.clear();self.reload_trainings(training_id)
@@ -252,28 +289,54 @@ class AdmissionPage(QWidget):
     def refresh(self):
         self.assessment=None;self.items.clear();self.table.setRowCount(0);self.problems.clear()
         try:
-            if self.repository:
-                fill_table(self.rules_table,[(r.rule_key,r.title,r.program_kind or 'Все',SOURCES[r.source],r.reference,r.version) for r in self.repository.rules()])
             key=self.training.currentData()
             if key is not None and self.repository:
                 self.assessment=self.repository.review(key);self.items={i.key:i for i in self.assessment.items}
-                fill_table(self.table,[(i.key,i.title,SOURCES[i.source],i.reference,'Обязательно' if i.required else 'Не блокирует',STATES[i.status]) for i in self.assessment.items])
+                training=self.repository.trainings.load(key);program=json.loads(training.program_snapshot)
+                student=self.repository.students.load(training.student_id)
+                direction=program['direction'];kind=KINDS.get(direction,{}).get(program['kind'],program['kind'])
+                self.summary.setText(f"{student.full_name}\n{program['full_name']}\n{'ДПО' if direction=='dpo' else 'ПО'} · {kind} · {program['hours']} ч.\n{training.start_date} — {training.end_date}")
+                labels={'required':'Отсутствует','absent':'Отсутствует','prepared':'Подготовлен','received':'Получен','verified':'Проверен','not_required':'Не требуется'}
+                fill_table(self.table,[(i.key,i.title,('Обязательно · ' if i.required else 'Не блокирует · ')+SOURCES[i.source],labels[i.status],'') for i in self.assessment.items])
+                rules={r.rule_key:r for r in self.repository.applicable(key)} if not self.assessment.historical else {}
+                for row,item in enumerate(self.assessment.items):
+                    self.table.item(row,0).setToolTip(item.reference)
+                    rule=rules.get(item.key)
+                    form=bool(rule and rule.document_type in ('application','consent') and item.status in ('required','absent'))
+                    button=QPushButton('Сформировать' if form else 'Проверить')
+                    button.setEnabled(not self.assessment.historical and training.state=='preparation' and item.status!='not_required')
+                    button.setToolTip('Исторический комплект защищён от изменений.' if self.assessment.historical else 'Требование не применяется.' if item.status=='not_required' else 'Созданная форма не считается подписанной.' if form else 'Учесть получение и проверить подтверждение.')
+                    button.clicked.connect(lambda checked=False,row=row,form=form:self.row_action(row,form))
+                    self.table.setCellWidget(row,3,button)
+                self.table.resizeRowsToContents()
                 text='Историческая комплектность на момент зачисления; изменения запрещены.' if self.assessment.historical else 'Готов к зачислению' if self.assessment.ready else 'Не готов к зачислению'
                 if self.assessment.historical and not self.assessment.items:text='Прежнее зачисление: комплектность до P03.5 не фиксировалась.'
                 self.state.setText(text);self.problems.setPlainText('\n'.join(self.assessment.problems))
-            else:self.state.setText('Выберите слушателя и программу через существующее обучение либо создайте новое.')
+            else:self.state.clear();self.summary.clear()
         except ERRORS as error:self.state.setText(str(error))
+        self.empty.setVisible(self.assessment is None)
+        self.empty_space.setVisible(self.assessment is None)
+        self.work_scroll.setVisible(self.assessment is not None)
+        self.choose_button.setEnabled(bool(self.repository))
+        self.new_button.setEnabled(bool(self.repository))
         self.selection_changed()
+
+    def row_action(self,row,form):
+        self.table.selectRow(row)
+        if form:self.prepare_form()
+        else:self.edit_record()
 
     def selection_changed(self):
         item=self.items.get(selected_id(self.table));editable=bool(self.assessment and not self.assessment.historical and self.repository.trainings.load(self.assessment.training_id).state=='preparation')
+        self.context_button.setToolTip('Исторический комплект защищён от изменений.' if not editable else 'Укажите основание обработки и применимость специальных условий.')
         self.context_button.setEnabled(editable);self.record_button.setEnabled(bool(item and editable))
         rule=next((r for r in self.repository.applicable(self.assessment.training_id) if item and r.rule_key==item.key),None) if self.repository and self.assessment and not self.assessment.historical else None
-        self.form_button.setEnabled(bool(editable and rule and rule.document_type in ('application','consent')))
-        self.reuse_button.setEnabled(bool(editable and rule and rule.reusable))
+        self.form_button.setEnabled(bool(editable and rule and rule.document_type in ('application','consent') and item.status!='not_required'))
+        self.reuse_button.setEnabled(bool(editable and rule and rule.reusable and item.status!='not_required' and self.repository.reusable_documents(self.assessment.training_id,item.key)))
         doc=self.repository.document(item.document_id) if item and item.document_id else None
         self.copy_button.setEnabled(bool(doc and doc['file_path']))
         details=list(self.assessment.problems) if self.assessment else []
+        if item:details.extend([SOURCES[item.source]+': '+item.reference,item.reason])
         if doc:
             event=self.repository.document_event(doc['id'])
             details.extend([f"Документ ID {doc['id']} · дата {doc['document_date']} · действует до {doc['valid_until'] or 'не указано'}",
@@ -285,8 +348,14 @@ class AdmissionPage(QWidget):
                 details.append(f"Шаблон: {template.name}, версия {template.version}, SHA-256 {doc['template_sha256']}")
         self.problems.setPlainText('\n'.join(details))
         is_consent=bool(item and item.document_id and self.repository.document(item.document_id)['document_type']=='consent')
-        self.revoke_button.setEnabled(is_consent)
+        self.revoke_button.setEnabled(bool(is_consent and self.repository.document_event(item.document_id)['state']!='revoked'))
         self.order_button.setEnabled(bool(editable and self.assessment.ready))
+        self.history_button.setEnabled(bool(self.assessment))
+        self.order_button.setToolTip('Сначала устраните замечания и проверьте готовность.' if not self.order_button.isEnabled() else 'Открыть оформление приказа о зачислении.')
+        hint='Исторический комплект доступен для просмотра; изменения запрещены.' if self.assessment and self.assessment.historical else 'Выберите документ в перечне.' if not item else 'Создание DOCX не подтверждает подписание. Получение и подпись учитываются отдельно.'
+        self.action_hint.setText(hint)
+        for button,reason in ((self.form_button,'Для выбранного требования не предусмотрена форма DOCX либо оно не применяется.'),(self.record_button,'Выберите документ в редактируемом комплекте.'),(self.reuse_button,'Нет действующих подтверждений для этого требования либо повторное использование не предусмотрено.'),(self.copy_button,'У выбранного документа нет сохранённого вложения.'),(self.revoke_button,'Выберите зарегистрированное согласие.')):
+            button.setToolTip(reason if not button.isEnabled() else button.text())
 
     def edit_context(self):
         if not self.assessment:return
@@ -348,14 +417,6 @@ class AdmissionPage(QWidget):
             except ERRORS as error:warn(self,error)
         self.refresh()
 
-    def edit_rule(self,existing):
-        if not self.repository:return
-        rule=next((r for r in self.repository.rules() if r.rule_key==selected_id(self.rules_table)),None) if existing else None
-        if existing and rule is None:return
-        try:AdmissionRuleDialog(self.repository,rule,self).exec()
-        except ERRORS as error:warn(self,error)
-        self.refresh()
-
     def history(self):
         if not self.assessment:return
         key=self.assessment.training_id;dialog=QDialog(self);dialog.setWindowTitle('История приёма');dialog.resize(850,500)
@@ -369,3 +430,38 @@ class AdmissionPage(QWidget):
 
     def showEvent(self,event):
         super().showEvent(event);self.reload_trainings()
+
+
+class AdmissionRulesPage(QWidget):
+    """Versioned requirements editor reused in Settings, apart from the operator's case."""
+    def __init__(self,repository):
+        super().__init__();self.repository=repository
+        layout=QVBoxLayout(self)
+        label=QLabel('Требования законодательства, локальных актов и конкретных программ. Изменение создаёт новую версию и сохраняет историю. Дополнительное согласие не является условием зачисления.')
+        label.setWordWrap(True);layout.addWidget(label)
+        self.rules_table=make_table(['Требование','Вид','Источник','Основание','Версия']);layout.addWidget(self.rules_table)
+        row=QHBoxLayout()
+        self.add_button=QPushButton('Добавить требование');self.add_button.clicked.connect(lambda:self.edit_rule(False))
+        self.edit_button=QPushButton('Новая версия требования');self.edit_button.clicked.connect(lambda:self.edit_rule(True))
+        row.addWidget(self.add_button);row.addWidget(self.edit_button);layout.addLayout(row)
+        self.rules_table.itemSelectionChanged.connect(self.selection_changed)
+        self.refresh()
+
+    def selection_changed(self):
+        self.edit_button.setEnabled(bool(self.repository and selected_id(self.rules_table)))
+
+    def refresh(self):
+        if self.repository:
+            fill_table(self.rules_table,[(r.rule_key,r.title,r.program_kind or 'Все',SOURCES[r.source],r.reference,r.version) for r in self.repository.rules()])
+        self.add_button.setEnabled(bool(self.repository));self.selection_changed()
+
+    def edit_rule(self,existing):
+        if not self.repository:return
+        rule=next((r for r in self.repository.rules() if r.rule_key==selected_id(self.rules_table)),None) if existing else None
+        if existing and rule is None:return
+        try:AdmissionRuleDialog(self.repository,rule,self).exec()
+        except ERRORS as error:warn(self,error)
+        self.refresh()
+
+    def showEvent(self,event):
+        super().showEvent(event);self.refresh()

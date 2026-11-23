@@ -8,6 +8,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QSignalBlocker
 
+from proficentr.admission import AdmissionRepository
+from proficentr.ui.admission_page import AdmissionRulesPage
 from proficentr.storage import relocate_storage
 from proficentr.organization import TrainingCenterRepository
 from proficentr.ui.training_center_page import TrainingCenterPage
@@ -62,6 +64,8 @@ class SettingsPage(QWidget):
         self.tabs.addTab(self.templates_page, "Шаблоны документов")
         self.frdo_page = FrdoPage(FrdoTemplateRepository(database.connection, storage) if database else None)
         self.tabs.addTab(self.frdo_page, "ФИС ФРДО")
+        self.admission_rules_page = AdmissionRulesPage(AdmissionRepository(database.connection, storage) if database else None)
+        self.tabs.addTab(self.admission_rules_page, "Требования приёма")
         self._tab_index = 0
         self.tabs.currentChanged.connect(self._change_tab)
 

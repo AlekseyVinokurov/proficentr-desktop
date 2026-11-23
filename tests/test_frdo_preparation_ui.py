@@ -90,8 +90,31 @@ def test_original_cards_preserve_new_fields(context):
     program_dialog.close()
 
 
-def test_documents_tab_is_available(context):
+def test_frdo_section_is_available(context):
     r, _ = context
     window = MainWindow(r.db.path, r.storage, r.db)
-    assert window.documents_page.tabText(window.documents_page.indexOf(window.frdo_preparation_page)) == 'Подготовка ФРДО'
+    from proficentr.ui.main_window import SECTIONS
+    window.navigation.setCurrentRow(SECTIONS.index('ФИС ФРДО'))
+    assert window.pages.currentWidget() is window.frdo_preparation_page
+    assert window.documents_page.indexOf(window.frdo_preparation_page) == -1
+    window.close()
+
+
+def test_navigation_preserves_frdo_selection_and_rechecks(context):
+    r,_=context
+    from proficentr.ui.main_window import SECTIONS
+    window=MainWindow(r.db.path,r.storage,r.db);window.show()
+    app=QApplication.instance();app.processEvents()
+    window.navigation.setCurrentRow(SECTIONS.index('ФИС ФРДО'));app.processEvents()
+    page=window.frdo_preparation_page
+    page.start.setDate(date(2026,11,1));page.end.setDate(date(2026,11,30));page.refresh()
+    assert page.table.rowCount()==1
+    page.table.selectRow(0);selected=page.selected_records()[0].document_id
+    window.navigation.setCurrentRow(SECTIONS.index('Документы'));app.processEvents()
+    window.navigation.setCurrentRow(SECTIONS.index('ФИС ФРДО'));app.processEvents()
+    assert window.pages.currentWidget() is page
+    assert page.start.date().toString('yyyy-MM-dd')=='2026-11-01'
+    assert page.selected_records()[0].document_id==selected
+    assert page.edit_button.isEnabled()
+    assert page.records[selected].signature==r.frdo.review(selected).signature
     window.close()

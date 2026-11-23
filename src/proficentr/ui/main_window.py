@@ -88,9 +88,11 @@ class MainWindow(QMainWindow):
                 self.documents_page.addTab(self.attestations_page, "Протоколы аттестации")
                 self.documents_page.addTab(self.completion_orders_page, "Приказы о завершении")
                 self.documents_page.addTab(self.issued_documents_page, "Выпускные документы")
-                self.frdo_preparation_page = FrdoPreparationPage(FrdoPreparationRepository(database.connection, storage or Storage(root)) if database else None)
-                self.documents_page.addTab(self.frdo_preparation_page, "Подготовка ФРДО")
                 self.pages.addWidget(self.documents_page)
+                continue
+            if section == "ФИС ФРДО":
+                self.frdo_preparation_page = FrdoPreparationPage(FrdoPreparationRepository(database.connection, storage or Storage(root)) if database else None)
+                self.pages.addWidget(self.frdo_preparation_page)
                 continue
             if section == "Настройки":
                 root = database_path.parent.parent if database_path.parent.name == "database" else database_path.parent
@@ -172,11 +174,7 @@ class MainWindow(QMainWindow):
                     with QSignalBlocker(self.navigation):
                         self.navigation.setCurrentRow(SECTIONS.index("Настройки"))
                     return
-            if SECTIONS[index] == "ФИС ФРДО":
-                self.pages.setCurrentIndex(SECTIONS.index("Документы"))
-                self.documents_page.setCurrentWidget(self.frdo_preparation_page)
-            else:
-                self.pages.setCurrentIndex(index)
+            self.pages.setCurrentIndex(index)
             self.statusBar().showMessage(f"Готово • {SECTIONS[index]}")
 
     def closeEvent(self, event):

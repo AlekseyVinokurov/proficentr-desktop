@@ -3,7 +3,7 @@
 from datetime import date
 import sqlite3
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QItemSelectionModel
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDateEdit, QDialog, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
     QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QTabWidget, QVBoxLayout, QWidget)
 
@@ -374,4 +374,17 @@ class FrdoPreparationPage(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        self.refresh()  # Повторный вход пересчитывает данные и проверяет текущий шаблон.
+        # Recheck current sources on entry, keeping only selections still present in the result.
+        selected={record.document_id for record in self.selected_records()}
+        package=selected_id(self.packages_table)
+        self.refresh()
+        first=True
+        for row in range(self.table.rowCount()):
+            if self.table.item(row,0).data(Qt.ItemDataRole.UserRole) in selected:
+                self.table.selectionModel().select(self.table.model().index(row,0),QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+                if first:
+                    self.table.setCurrentCell(row,0,QItemSelectionModel.SelectionFlag.NoUpdate);first=False
+        for row in range(self.packages_table.rowCount()):
+            if self.packages_table.item(row,0).data(Qt.ItemDataRole.UserRole)==package:
+                self.packages_table.selectRow(row)
+        self.show_errors()

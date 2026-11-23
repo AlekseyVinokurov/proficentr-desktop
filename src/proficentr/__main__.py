@@ -70,7 +70,7 @@ def main() -> int:
             if args.smoke_test:
                 for index in range(len(SECTIONS)):
                     window.navigation.setCurrentRow(index)
-                    expected = SECTIONS.index("Документы") if SECTIONS[index]=="ФИС ФРДО" else index
+                    expected = index
                     if window.pages.currentIndex() != expected:
                         raise RuntimeError("Не работает навигация.")
                 window.navigation.setCurrentRow(0)

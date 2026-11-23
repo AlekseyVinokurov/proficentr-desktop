@@ -23,7 +23,7 @@ def test_window_navigation(tmp_path):
     for index, title in enumerate(SECTIONS):
         window.navigation.setCurrentRow(index)
         app.processEvents()
-        assert window.pages.currentIndex() == (SECTIONS.index("Документы") if title=="ФИС ФРДО" else index)
+        assert window.pages.currentIndex() == index
         assert title in window.statusBar().currentMessage()
     window.close()
 
