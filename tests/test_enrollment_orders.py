@@ -26,6 +26,8 @@ from proficentr.storage import relocate_storage
 def orders(records):
     r = records
     r.contracts = r.repo
+    from admission_fixtures import ready_for_admission
+    ready_for_admission(r.db.connection,r.storage,[t.id for t in r.members])
     r.repo = EnrollmentOrderRepository(r.db.connection, r.storage)
     for variant in ('dpo-individual','dpo-group'):
         r.repo.templates.register(r.source,'enrollment_order',variant,'Вымышленная форма приказа')
@@ -41,6 +43,8 @@ def register(r, order):
 
 
 def sign(r, order, **changes):
+    from admission_fixtures import ready_for_admission
+    ready_for_admission(r.db.connection,r.storage,r.repo.training_ids(order.id))
     args = dict(signed_date='2020-02-11',confirmed_by='Ответственный Примеров',grounds_checked=True,education_checked=True)
     args.update(changes)
     return r.repo.confirm_signing(order.id,**args)

@@ -19,6 +19,7 @@ from proficentr.document_templates import TemplateRepository
 from proficentr.enrollment_orders import EnrollmentOrder, KINDS, OrderError
 from proficentr.students import is_adult, iso_date
 from proficentr.trainings import validate_dates
+from proficentr.admission import AdmissionRepository
 
 FIELDS = tuple(asdict(EnrollmentOrder()))
 DRAFT_FIELDS = ('order_date', 'kind', 'group_id', 'historical_number', 'note', 'template_id')
@@ -219,6 +220,7 @@ class EnrollmentOrderRepository:
         for item in self.related_contracts(training_ids):
             if not any(c['state'] == 'registered' for c in item['contracts']):
                 result.append(f"Обучение ID {item['training_id']}: нет зарегистрированного действующего договора.")
+        result.extend(AdmissionRepository(self.connection,self.storage).enrollment_problems(training_ids))
         return result
 
     def _context(self, order, trainings):
@@ -365,6 +367,7 @@ class EnrollmentOrderRepository:
             current = self._trainings(order, self.training_ids(order_id))
             if current != json.loads(order.snapshot)['trainings']:
                 raise OrderError('Обучения изменились после регистрации. Требуется новый приказ с актуальными сведениями.')
+            AdmissionRepository(self.connection,self.storage).confirm_enrollment(order_id,[t['id'] for t in current])
             self.connection.executemany('INSERT INTO training_enrollments(training_id,order_id) VALUES (?,?)', [(t['id'], order_id) for t in current])
             self.connection.execute("UPDATE enrollment_orders SET state = 'signed', signed_date = ?, confirmed_at = CURRENT_TIMESTAMP, confirmed_by = ?, grounds_checked = 1, education_checked = 1, revision = revision + 1 WHERE id = ?", (signed_date, confirmed_by, order_id))
         return self.load(order_id)

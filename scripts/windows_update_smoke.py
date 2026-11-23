@@ -121,6 +121,23 @@ def main():
                                                      total_cents=500, payment_terms='Synthetic draft'), [group_training.id])
             contract_files = {contract.id: contracts.verify_document(contract.id).read_bytes()
                               for contract in (registered_contract, annulled_contract)}
+        from proficentr.admission import AdmissionRepository
+        ready_admission = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'tests' / 'admission_fixtures.py'))['ready_for_admission']
+        with Database(storage.database_path) as db:
+            ready_admission(db.connection,storage,[group_training.id,individual_training.id])
+            admission = AdmissionRepository(db.connection,storage)
+            source_admission = root/'admission-test.docx'
+            sample_admission = Document()
+            sample_admission.add_paragraph('TEST {{ student.full_name }} {{ program.name }} {{ admission.title }} {{ admission.scope }}')
+            sample_admission.save(source_admission)
+            admission_template = admission.templates.register(source_admission,'application','admission','Synthetic application')
+            admission_document = admission.prepare_form(group_training.id,'application',template_id=admission_template.id,
+                day='2020-01-01',responsible='Synthetic responsible',expected_signature=admission.review(group_training.id).signature)
+            admission.record(group_training.id,'application',state='verified',reason='Synthetic signed original checked',day='2020-01-01',
+                responsible='Synthetic responsible',signed=True,document_id=admission_document,expected_signature=admission.review(group_training.id).signature)
+            admission_bytes = admission.file(admission_document).read_bytes()
+            admission_history = admission.history(group_training.id)
+            admission_rules = admission.rules()
         sample_docx = Document()
         sample_docx.add_paragraph('{{ document.number }} {{ document.date }} {{ program.name }}')
         sample_docx.add_paragraph('{% for row in students %}{{ row.full_name }} {{ row.start_date }} {{ row.end_date }}{% endfor %}')
@@ -294,6 +311,13 @@ def main():
                     assert contracts.verify_document(contract_id).read_bytes() == data
                 assert contracts.training_ids(registered_contract.id) == [group_training.id]
                 assert trainings.load(group_training.id).state == 'preparation'
+                admission = AdmissionRepository(db.connection,storage)
+                assert admission.file(admission_document).read_bytes() == admission_bytes
+                assert admission.history(group_training.id) == admission_history
+                assert admission.rules() == admission_rules
+                assert admission.review(group_training.id).ready
+                assert admission.review(individual_training.id).historical
+                assert db.connection.execute('SELECT count(*) FROM admission_enrollment_checks').fetchone() == (1,)
                 orders = EnrollmentOrderRepository(db.connection, storage)
                 assert orders.load(registered_order.id) == registered_order
                 assert orders.load(signed_order.id) == signed_order

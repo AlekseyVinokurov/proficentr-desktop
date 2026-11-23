@@ -70,7 +70,8 @@ def main() -> int:
             if args.smoke_test:
                 for index in range(len(SECTIONS)):
                     window.navigation.setCurrentRow(index)
-                    if window.pages.currentIndex() != index:
+                    expected = SECTIONS.index("Документы") if SECTIONS[index]=="ФИС ФРДО" else index
+                    if window.pages.currentIndex() != expected:
                         raise RuntimeError("Не работает навигация.")
                 window.navigation.setCurrentRow(0)
                 # CI fixtures may contain templates: exercise the renderer in the frozen EXE.
@@ -89,6 +90,11 @@ def main() -> int:
                 for row in orders.search():
                     if row[-1] != "draft":
                         orders.verify_document(row[0])
+                admission = window.admission_page.repository
+                for document_id, in database.connection.execute("SELECT id FROM admission_documents WHERE file_path!=''"):
+                    admission.file(document_id)
+                for training_id, in database.connection.execute('SELECT DISTINCT training_id FROM admission_context_events'):
+                    admission.review(training_id)
                 exports = window.frdo_preparation_page.exports
                 for package in exports.packages():
                     exports.file(package.id)

@@ -17,7 +17,14 @@ def use_legacy_card_fields(patch):
         patch.setattr(module, 'DATA_FIELDS', fields[1:])
 
 
+def remove_admission_schema(connection):
+    for table in ('admission_enrollment_checks','admission_checks','admission_document_events','admission_documents',
+                  'admission_context_events','admission_rule_history','admission_rules'):
+        connection.execute('DROP TABLE '+table)
+
+
 def remove_preparation_schema(connection):
+    remove_admission_schema(connection)
     connection.execute('DROP TABLE frdo_package_documents')
     connection.execute('DROP TABLE frdo_packages')
     connection.execute('DROP TABLE frdo_change_history')

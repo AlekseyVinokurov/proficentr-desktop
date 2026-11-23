@@ -3,7 +3,7 @@
 from dataclasses import replace
 import json
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QFormLayout, QHBoxLayout,
     QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit,
@@ -185,6 +185,8 @@ class StudentPicker(QDialog):
 
 
 class TrainingDialog(DraftDialog):
+    admission_requested = Signal(int)
+
     def __init__(self, repository, training=None, parent=None):
         super().__init__(parent)
         self.repository = repository
@@ -228,6 +230,19 @@ class TrainingDialog(DraftDialog):
         self.update_student_label()
         self.add_buttons(layout)
         self._initial_state = self._state()
+        self.admission_button = QPushButton("Сохранить и открыть приём на обучение")
+        self.admission_button.setEnabled(self.original.id is not None)
+        self.admission_button.clicked.connect(self.open_admission)
+        layout.addWidget(self.admission_button)
+
+    def open_admission(self):
+        if self.is_dirty():
+            if not self.save():
+                return
+        else:
+            self.saved_training = self.original
+            self.accept()
+        self.admission_requested.emit(self.saved_training.id)
 
     def update_student_label(self):
         if self.student_id:

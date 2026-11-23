@@ -353,6 +353,9 @@ def test_migration15_preserves_preparation_and_relocation_preserves_packages(rea
     legacy = tmp_path/'legacy14.sqlite3'
     with sqlite3.connect(legacy) as copy:
         r.db.connection.backup(copy)
+        from legacy_schema import remove_admission_schema
+        remove_admission_schema(copy)
+        copy.execute('DELETE FROM schema_migrations WHERE version=16')
         copy.execute('DROP TABLE frdo_package_documents')
         copy.execute('DROP TABLE frdo_packages')
         copy.execute('DELETE FROM schema_migrations WHERE version=15')

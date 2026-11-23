@@ -19,11 +19,11 @@ def test_window_navigation(tmp_path):
     window.show()
     app.processEvents()
     assert window.windowTitle() == "Proficentr Desktop"
-    assert window.navigation.count() == window.pages.count() == 8
+    assert window.navigation.count() == window.pages.count() == 9
     for index, title in enumerate(SECTIONS):
         window.navigation.setCurrentRow(index)
         app.processEvents()
-        assert window.pages.currentIndex() == index
+        assert window.pages.currentIndex() == (SECTIONS.index("Документы") if title=="ФИС ФРДО" else index)
         assert title in window.statusBar().currentMessage()
     window.close()
 

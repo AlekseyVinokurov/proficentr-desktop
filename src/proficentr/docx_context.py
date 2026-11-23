@@ -12,6 +12,7 @@ TRAINING_FIELDS = "start_date end_date state".split()
 ATTESTATION_FIELDS = "attestation_result grade qualification qualification_grade attestation_note".split()
 COMPLETION_FIELDS = "completion_date completion_basis protocol_number protocol_date attestation_date".split()
 SCHEMA = {
+    "admission": dict.fromkeys("title scope pd_basis pd_reference pd_scope valid_until".split()),
     "issued": dict.fromkeys("kind number date blank_series blank_number completion_date completion_order_number completion_order_date qualification qualification_grade".split()),
     "completion": dict.fromkeys(("date", "basis")),
     "protocol": dict.fromkeys("number date attestation_date kind chair members note".split()),

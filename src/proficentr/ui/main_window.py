@@ -8,6 +8,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget, QTabWidget,
 )
 from proficentr.storage import Storage
+from proficentr.admission import AdmissionRepository
+from proficentr.ui.admission_page import AdmissionPage
 from proficentr.ui.settings_page import SettingsPage
 from proficentr.frdo_preparation import FrdoPreparationRepository
 from proficentr.ui.frdo_preparation_page import FrdoPreparationPage
@@ -33,7 +35,7 @@ from proficentr.ui.enrollment_orders_page import EnrollmentOrdersPage
 
 SECTIONS = (
     "Главная", "Слушатели", "Организации", "Программы", "Группы",
-    "Документы", "ФИС ФРДО", "Настройки",
+    "Приём на обучение", "Документы", "ФИС ФРДО", "Настройки",
 )
 
 
@@ -68,6 +70,10 @@ class MainWindow(QMainWindow):
             if section == "Группы":
                 self.groups_page = GroupsPage(TrainingRepository(database.connection) if database else None, attestations=self.attestation_repository)
                 self.pages.addWidget(self.groups_page)
+                continue
+            if section == "Приём на обучение":
+                self.admission_page = AdmissionPage(AdmissionRepository(database.connection, storage or Storage(root)) if database else None)
+                self.pages.addWidget(self.admission_page)
                 continue
             if section == "Документы":
                 root = database_path.parent.parent if database_path.parent.name == "database" else database_path.parent
@@ -115,6 +121,9 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(container)
         self.navigation.currentRowChanged.connect(self._navigate)
         self.navigation.setCurrentRow(0)
+        self.groups_page.admission_requested.connect(self._open_admission)
+        self.admission_page.templates_requested.connect(self._open_templates)
+        self.admission_page.enrollment_requested.connect(self._create_order)
         self.groups_page.contract_requested.connect(self._create_contract)
         self.groups_page.order_requested.connect(self._create_order)
         self.groups_page.attestation_requested.connect(self._create_attestation)
@@ -122,6 +131,10 @@ class MainWindow(QMainWindow):
         self.groups_page.issuance_requested.connect(self._create_issued)
         self.issued_documents_page.templates_requested.connect(self._open_templates)
         self.completion_orders_page.templates_requested.connect(self._open_templates)
+
+    def _open_admission(self, training_id):
+        self.navigation.setCurrentRow(SECTIONS.index("Приём на обучение"))
+        self.admission_page.open_training(training_id)
 
     def _create_contract(self, training_ids, group_id):
         self.navigation.setCurrentRow(SECTIONS.index("Документы"))
@@ -159,7 +172,11 @@ class MainWindow(QMainWindow):
                     with QSignalBlocker(self.navigation):
                         self.navigation.setCurrentRow(SECTIONS.index("Настройки"))
                     return
-            self.pages.setCurrentIndex(index)
+            if SECTIONS[index] == "ФИС ФРДО":
+                self.pages.setCurrentIndex(SECTIONS.index("Документы"))
+                self.documents_page.setCurrentWidget(self.frdo_preparation_page)
+            else:
+                self.pages.setCurrentIndex(index)
             self.statusBar().showMessage(f"Готово • {SECTIONS[index]}")
 
     def closeEvent(self, event):

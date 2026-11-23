@@ -44,6 +44,8 @@ def selected_id(table):
 
 
 class TrainingList(QWidget):
+    admission_requested = Signal(int)
+
     contract_requested = Signal(object, object)
     order_requested = Signal(object, object)
     attestation_requested = Signal(object, object)
@@ -81,6 +83,9 @@ class TrainingList(QWidget):
             buttons.addWidget(button)
         layout.addLayout(buttons)
         documents = QHBoxLayout()
+        self.admission_button = QPushButton("Приём на обучение")
+        self.admission_button.clicked.connect(lambda: self.admission_requested.emit(selected_id(self.table)))
+        documents.addWidget(self.admission_button)
         self.order_button = QPushButton("Создать приказ")
         self.order_button.clicked.connect(lambda: self.order_requested.emit([selected_id(self.table)] if selected_id(self.table) else [], self.group_id))
         self.attestation_button = QPushButton("Аттестация")
@@ -108,6 +113,7 @@ class TrainingList(QWidget):
     def selection_changed(self):
         training_id = selected_id(self.table)
         self.open_button.setEnabled(training_id is not None)
+        self.admission_button.setEnabled(training_id is not None)
         self.attestation_button.setEnabled(bool(training_id and self.table.item(self.table.currentRow(),4).text() == STATES["enrolled"]))
         self.issued_button.setEnabled(bool(training_id and self.table.item(self.table.currentRow(),4).text() == STATES["completed"]))
         self.completion_button.setEnabled(bool(training_id and self.table.item(self.table.currentRow(),4).text() == STATES["enrolled"]))
@@ -180,6 +186,7 @@ class TrainingList(QWidget):
                 QMessageBox.information(self, "Исключённая запись", "Запись сохранена в истории состава. Для повторного добавления выберите слушателя через «Добавить слушателей».")
                 return
             dialog = TrainingDialog(self.repository, training, self)
+            dialog.admission_requested.connect(self.admission_requested.emit)
             dialog.exec()
             self.refresh(training_id)
         except ERRORS as error:
@@ -199,6 +206,8 @@ class TrainingList(QWidget):
 
 
 class GroupsPage(QWidget):
+    admission_requested = Signal(int)
+
     contract_requested = Signal(object, object)
     order_requested = Signal(object, object)
     attestation_requested = Signal(object, object)
@@ -256,6 +265,7 @@ class GroupsPage(QWidget):
         content.addWidget(self.state)
         self.tabs.addTab(groups, "Учебные группы")
         self.individual = TrainingList(repository, attestations=attestations)
+        self.individual.admission_requested.connect(self.admission_requested.emit)
         self.individual.contract_requested.connect(self.contract_requested.emit)
         self.individual.order_requested.connect(self.order_requested.emit)
         self.individual.attestation_requested.connect(self.attestation_requested.emit)
@@ -326,6 +336,10 @@ class GroupsPage(QWidget):
             dialog.resize(960, 580)
             layout = QVBoxLayout(dialog)
             members = TrainingList(self.repository, group_id=group_id, attestations=self.attestations, parent=dialog)
+            def open_admission(training_id):
+                dialog.accept()
+                self.admission_requested.emit(training_id)
+            members.admission_requested.connect(open_admission)
             def create_contract(training_ids, selected_group_id):
                 dialog.accept()
                 self.contract_requested.emit(training_ids, selected_group_id)

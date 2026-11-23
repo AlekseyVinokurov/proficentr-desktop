@@ -34,11 +34,13 @@ import proficentr.issued_repository as issue_module
 
 def complete(r, direction='dpo', kind='dpo_upskilling'):
     if kind!=r.program.kind:
-        program=ProgramRepository(r.db.connection).save(replace(r.program,id=None,full_name='Вымышленная программа '+kind,direction=direction,kind=kind))
+        program=ProgramRepository(r.db.connection).save(replace(r.program,id=None,full_name='Вымышленная программа '+kind,direction=direction,kind=kind,hours=250 if kind=='dpo_retraining' else r.program.hours))
         r.group=r.trainings.save_group(replace(r.group,program_id=program.id),change_program=True)
     enrollment=EnrollmentOrderRepository(r.db.connection,r.storage)
     enrollment.templates.register(r.source,'enrollment_order',direction+'-group','Вымышленный приказ')
     o=enrollment.save(EnrollmentOrder(order_date='2020-02-01',kind='group',group_id=r.group.id),[t.id for t in r.members]);o=enrollment.register(o.id,enrollment.prepare(o.id).signature)
+    from admission_fixtures import ready_for_admission
+    ready_for_admission(r.db.connection,r.storage,enrollment.training_ids(o.id))
     enrollment.confirm_signing(o.id,signed_date='2020-02-02',confirmed_by='Тест',grounds_checked=True,education_checked=True)
     protocols=AttestationRepository(r.db.connection,r.storage);protocols.templates.register(r.source,'protocol_'+direction,'standard','Вымышленный протокол')
     p=protocols.save(AttestationProtocol(protocol_date='2020-04-01',attestation_date='2020-04-01',group_id=r.group.id,direction=direction),

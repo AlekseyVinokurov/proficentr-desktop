@@ -45,6 +45,8 @@ def test_single_order_card_preview_register_then_sign(context,monkeypatch,tmp_pa
     assert not sign.confirm()
     sign.day.setText('2020-01-02'); sign.responsible.setText('Ответственный Примеров')
     sign.grounds.setChecked(True); sign.education.setChecked(True)
+    from admission_fixtures import ready_for_admission
+    ready_for_admission(repo.connection,repo.storage,[members[0].id])
     assert sign.confirm()
     page.refresh(saved.id); assert not page.sign_button.isEnabled()
     window.groups_page.individual.refresh()

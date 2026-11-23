@@ -111,6 +111,8 @@ def test_no_signed_protocol_is_not_a_basis(completions,state):
     t=r.trainings.save(Training(student_id=r.first.id,program_id=r.program.id,start_date='2022-01-01',end_date='2022-02-01'))
     from proficentr.enrollment_orders import EnrollmentOrder
     o=r.orders.save(EnrollmentOrder(order_date='2022-01-01'),[t.id]); o=r.orders.register(o.id,r.orders.prepare(o.id).signature)
+    from admission_fixtures import ready_for_admission
+    ready_for_admission(r.db.connection,r.storage,r.orders.training_ids(o.id))
     r.orders.confirm_signing(o.id,signed_date='2022-01-02',confirmed_by='Тест',grounds_checked=True,education_checked=True)
     if state!='none':
         p=r.protocols.save(AttestationProtocol(protocol_date='2022-02-01',attestation_date='2022-02-01'),[AttestationResult(t.id,'passed')])
@@ -233,6 +235,8 @@ def test_po_qualification_snapshot_and_individual_training(completions):
     source=r.orders.templates.source(r.orders.templates.list_versions('enrollment_order')[0].id).path
     r.orders.templates.register(source,'enrollment_order','po-individual','Вымышленный приказ ПО')
     o=r.orders.save(EnrollmentOrder(order_date='2021-01-01'),[t.id]); o=r.orders.register(o.id,r.orders.prepare(o.id).signature)
+    from admission_fixtures import ready_for_admission
+    ready_for_admission(r.db.connection,r.storage,r.orders.training_ids(o.id))
     r.orders.confirm_signing(o.id,signed_date='2021-01-02',confirmed_by='Тест',grounds_checked=True,education_checked=True)
     p=r.protocols.save(AttestationProtocol(protocol_date='2021-02-01',attestation_date='2021-02-01',direction='po'),[AttestationResult(t.id,'passed','зачёт','Вымышленная квалификация','3 разряд')])
     p=r.protocols.register(p.id,r.protocols.prepare(p.id).signature)
@@ -358,6 +362,8 @@ def test_mixed_program_revision_and_wrong_direction_rejected(completions):
     t=r.trainings.add_students(r.group.id,[student.id])[0]
     from proficentr.enrollment_orders import EnrollmentOrder
     o=r.orders.save(EnrollmentOrder(order_date='2020-02-10',kind='group',group_id=r.group.id),[t.id]); o=r.orders.register(o.id,r.orders.prepare(o.id).signature)
+    from admission_fixtures import ready_for_admission
+    ready_for_admission(r.db.connection,r.storage,r.orders.training_ids(o.id))
     r.orders.confirm_signing(o.id,signed_date='2020-02-11',confirmed_by='Тест',grounds_checked=True,education_checked=True)
     attempt(r,'passed','2020-04-01',[t.id])
     with pytest.raises(CompletionError,match='редакция'): draft(r,[r.members[0].id,t.id],kind='group',group_id=r.group.id)

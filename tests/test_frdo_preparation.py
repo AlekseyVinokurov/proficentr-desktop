@@ -57,7 +57,7 @@ def test_adapters_use_actual_document_fields_and_exact_dictionaries(records, kin
     assert values['H'] == '01.11.2026' and values['K'] == r.document.program_name
     assert values['S' if kind == 'dpo' else 'N'] == '2020'
     assert values['T' if kind == 'dpo' else 'O'] == '2020'
-    assert values['U' if kind == 'dpo' else 'P'] == '72'
+    assert values['U' if kind == 'dpo' else 'P'] == str(r.document.hours)
     assert values['AE' if kind == 'dpo' else 'W'] == '000'
     assert all(not values[col] for col in (['AF','AG','AH','AI','AJ','AK','AL','AM','AN'] if kind == 'dpo' else ['AA','AB','AC','AD','AE','AF','AG','AH','AI']))
     values['G'] = 'tamper'
@@ -200,12 +200,14 @@ def test_individual_and_group_training_of_same_student_remain_independent(prepar
     from proficentr.issued_repository import IssuedDocumentRepository
     r = prepared
     save(r, **changes(r))
-    program = r.frdo.programs.save(replace(r.program, id=None, full_name='Отдельная историческая программа', hours=144, kind='dpo_retraining'))
+    program = r.frdo.programs.save(replace(r.program, id=None, full_name='Отдельная историческая программа', hours=288, kind='dpo_retraining'))
     individual = r.trainings.save(Training(student_id=r.first.id, program_id=program.id, start_date='2021-01-01', end_date='2021-02-01'))
     orders = EnrollmentOrderRepository(r.db.connection, r.storage)
     orders.templates.register(r.source, 'enrollment_order', 'dpo-individual', 'Тест')
     order = orders.save(EnrollmentOrder(order_date='2020-12-01'), [individual.id])
     order = orders.register(order.id, orders.prepare(order.id).signature)
+    from admission_fixtures import ready_for_admission
+    ready_for_admission(r.db.connection,r.storage,orders.training_ids(order.id))
     orders.confirm_signing(order.id, signed_date='2020-12-02', confirmed_by='Тест', grounds_checked=True, education_checked=True)
     protocols = AttestationRepository(r.db.connection, r.storage)
     protocol = protocols.save(AttestationProtocol(protocol_date='2021-02-01', attestation_date='2021-02-01', direction='dpo'), [AttestationResult(individual.id, 'passed')])
@@ -221,7 +223,7 @@ def test_individual_and_group_training_of_same_student_remain_independent(prepar
     document = issued.save(IssuedDocument(training_id=individual.id, document_date='2026-11-02', blank_series='ТЕСТ', blank_number='000002'))
     document = issued.register(document.id, issued.prepare(document.id).signature)
     row = r.frdo.review(document.id)
-    assert row.values['K'] == 'Отдельная историческая программа' and row.values['U'] == '144'
+    assert row.values['K'] == 'Отдельная историческая программа' and row.values['U'] == '288'
     assert row.values['S'] == row.values['T'] == '2021'
     assert row.values['Z'] == 'Муж' and row.values['AE'] == '000'
     assert row.values['AB'] == row.values['AC'] == row.values['N'] == ''
