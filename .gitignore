@@ -40,3 +40,7 @@ Thumbs.db
 
 # Пользовательские исходные материалы ФИС ФРДО, включая Zone.Identifier
 /references/frdo/
+
+# T06 source archives and Windows download metadata stay local.
+/templates/
+!src/proficentr/resources/working_templates/**/*.docx

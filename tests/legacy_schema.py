@@ -18,9 +18,12 @@ def use_legacy_card_fields(patch):
 
 
 def remove_admission_schema(connection):
-    for table in ('admission_enrollment_checks','admission_checks','admission_document_events','admission_documents',
+    for table in ('working_template_generations','template_supplements','working_template_events',
+                  'regulatory_links','regulatory_status_events','regulatory_versions','regulatory_documents',
+                  'admission_enrollment_checks','admission_checks','admission_document_events','admission_documents',
                   'admission_context_events','admission_rule_history','admission_rules'):
         connection.execute('DROP TABLE '+table)
+    connection.execute('DELETE FROM schema_migrations WHERE version>=16')
 
 
 def remove_preparation_schema(connection):

@@ -15,7 +15,7 @@ from openpyxl.cell import WriteOnlyCell
 from proficentr.completion_repository import CompletionRepository
 from proficentr.contract_repository import encoded
 from proficentr.contracts import number_key
-from proficentr.docx_context import SCHEMA, validate_context
+from proficentr.docx_context import SCHEMA, validate_context, empty_context
 from proficentr.docx_engine import generate_document, publish_docx, read_docx, render_docx, validate_package
 from proficentr.document_templates import TemplateRepository
 from proficentr.issued_documents import IssuedDocument, IssuanceError, KINDS, PREFIXES, document_kind
@@ -80,7 +80,7 @@ class IssuedDocumentRepository:
         values = dict(training_id=training_id,kind=kind,full_name=student['full_name'],program_name=program['name'],hours=program['hours'],
             direction=program['direction'],program_kind=program['kind'],qualification=student['qualification'],qualification_grade=student['qualification_grade'],
             completion_date=fact[2],completion_order_id=order.id,completion_order_number=order.number,completion_order_date=order.order_date)
-        context = {root:dict.fromkeys(fields,'') for root,fields in SCHEMA.items() if root!='students'}
+        context = empty_context()
         for root in ('center','program','group'): context[root]=dict(c[root])
         context['student']={k:student[k] for k in SCHEMA['student']}
         context['students']=[dict(student)]
@@ -148,7 +148,7 @@ class IssuedDocumentRepository:
             completion_date=d.completion_date,completion_order_number=d.completion_order_number,completion_order_date=d.completion_order_date,
             qualification=d.qualification,qualification_grade=d.qualification_grade)
         context['document'].update(number=context['issued']['number'],date=d.document_date,is_draft=True,is_test=False)
-        context=validate_context(context)
+        context=validate_context(self.templates.complete_context(context))
         signature=hashlib.sha256(encoded({'draft':asdict(d),'context':context,'basis':basis,'template':asdict(t)}).encode()).hexdigest()
         return IssueReview(signature,t.id,context,basis)
 

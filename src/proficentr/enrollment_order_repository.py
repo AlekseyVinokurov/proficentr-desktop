@@ -13,7 +13,7 @@ from uuid import uuid4
 from docx import Document
 from proficentr.contract_repository import ContractRepository, encoded
 from proficentr.contracts import number_key
-from proficentr.docx_context import SCHEMA, validate_context
+from proficentr.docx_context import SCHEMA, validate_context, empty_context
 from proficentr.docx_engine import generate_document, publish_docx, read_docx, render_docx, validate_package
 from proficentr.document_templates import TemplateRepository
 from proficentr.enrollment_orders import EnrollmentOrder, KINDS, OrderError
@@ -224,7 +224,7 @@ class EnrollmentOrderRepository:
         return result
 
     def _context(self, order, trainings):
-        context = {root: dict.fromkeys(fields, '') for root, fields in SCHEMA.items() if root != 'students'}
+        context = empty_context()
         context['center'] = self._entity('training_center', tuple(SCHEMA['center']), 1)
         if not context['center']['full_name']:
             raise OrderError('Заполните карточку учебного центра в настройках.')
@@ -243,7 +243,7 @@ class EnrollmentOrderRepository:
                 context['group'].update(start_date='', end_date='')
         context['order'].update(kind=order.kind, student_count=len(students))
         context['document'].update(number='ПРОЕКТ — НЕ ЗАРЕГИСТРИРОВАН', date=order.order_date, is_test=False, is_draft=True)
-        return validate_context(context)
+        return validate_context(self.templates.complete_context(context))
 
     def suitable_templates(self, order, training_ids):
         trainings = self._trainings(order, training_ids)

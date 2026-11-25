@@ -12,7 +12,7 @@ from uuid import uuid4
 from docx import Document
 
 from proficentr.contracts import Contract, ContractError, format_price, number_key, validate_contract
-from proficentr.docx_context import SCHEMA, validate_context
+from proficentr.docx_context import SCHEMA, validate_context, empty_context
 from proficentr.docx_engine import generate_document, publish_docx, read_docx, render_docx, validate_package
 from proficentr.document_templates import TemplateRepository
 from proficentr.students import is_adult, iso_date
@@ -148,7 +148,7 @@ class ContractRepository:
         return values
 
     def _context(self, contract, trainings):
-        context = {root: dict.fromkeys(fields, '') for root, fields in SCHEMA.items() if root != 'students'}
+        context = empty_context()
         try:
             center = self._entity('training_center', tuple(SCHEMA['center']), 1)
         except ContractError:
@@ -195,12 +195,12 @@ class ContractRepository:
         context['contract'].update(total_price=format_price(contract.total_cents), payment_terms=contract.payment_terms,
                                    currency='RUB', student_count=len({row['student_id'] for row in trainings}))
         context['document'].update(number='ПРОЕКТ — НЕ ЗАРЕГИСТРИРОВАН', date=contract.contract_date, is_test=False, is_draft=True)
-        return validate_context(context)
+        return validate_context(self.templates.complete_context(context))
 
     def _candidates(self, contract, trainings):
         direction = json.loads(trainings[0]['program_snapshot'])['direction']
         return [version for version in self.templates.list_versions(TEMPLATE_TYPES[contract.customer_type])
-                if version.active and (version.variant == direction or version.variant.startswith(direction + '-'))]
+                if version.active and self.templates.supports_contract(version.id,contract,trainings) and (version.variant == direction or version.variant.startswith(direction + '-'))]
 
     def suitable_templates(self, contract, training_ids):
         try:

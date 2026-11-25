@@ -635,6 +635,22 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
             BEGIN SELECT RAISE(ABORT,'Regulatory history is immutable'); END""",
     ),
 
+    # T06: append-only configuration and supplemental document facts.
+    (
+        """CREATE TABLE working_template_events (id INTEGER PRIMARY KEY,code TEXT NOT NULL,
+        base_version_id INTEGER NOT NULL REFERENCES document_templates(id),effective_version_id INTEGER NOT NULL REFERENCES document_templates(id),
+        origin TEXT NOT NULL CHECK(origin IN ('standard','custom')),mode TEXT NOT NULL CHECK(mode IN ('none','background','preprinted')),
+        background_path TEXT NOT NULL DEFAULT '',background_sha256 TEXT NOT NULL DEFAULT '',catalog_snapshot TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""",
+        """CREATE TABLE template_supplements (id INTEGER PRIMARY KEY,binding TEXT NOT NULL,fields TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""",
+        """CREATE TABLE working_template_generations (id INTEGER PRIMARY KEY,template_version_id INTEGER NOT NULL REFERENCES document_templates(id),
+        relative_path TEXT NOT NULL,sha256 TEXT NOT NULL,context_snapshot TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""",
+        *(f"CREATE TRIGGER {table}_no_{action.lower()} BEFORE {action} ON {table} BEGIN SELECT RAISE(ABORT,'Template history is immutable'); END"  # nosec B608 # Fixed internal identifiers.
+          for table in ('working_template_events','template_supplements','working_template_generations') for action in ('UPDATE','DELETE')),
+        *(f"CREATE TRIGGER {table}_no_replace BEFORE INSERT ON {table} WHEN EXISTS (SELECT 1 FROM {table} WHERE id=NEW.id) BEGIN SELECT RAISE(ABORT,'Template history is immutable'); END"  # nosec B608 # Fixed internal identifiers.
+          for table in ('working_template_events','template_supplements','working_template_generations')),
+    ),
+
 )
 
 

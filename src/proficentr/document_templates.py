@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 import hashlib
+import json
 from pathlib import Path
 import re
 import sqlite3
@@ -23,6 +24,11 @@ DOCUMENT_TYPES = {
     'dpo_upskilling_certificate': 'Удостоверение о повышении квалификации',
     'dpo_retraining_diploma': 'Диплом о профессиональной переподготовке',
     'po_profession_certificate': 'Свидетельство о профессии рабочего, должности служащего',
+    'admission_checklist': 'Перечень документов для приёма',
+    'expulsion_order': 'Приказ о досрочном отчислении',
+    'study_certificate': 'Справка об обучении',
+    'issuance_registry': 'Реестр выдачи',
+    'delivery_receipt': 'Подтверждение получения',
     'other': 'Другой документ',
 }
 
@@ -44,18 +50,24 @@ class TemplateVersion:
 class TemplateSource:
     path: Path
     sha256: str
+    required_variables: tuple[str, ...] = ()
 
 
 class TemplateRepository:
-    def __init__(self, connection, storage):
+    def __init__(self, connection, storage, *, access_check=None):
+        self.access_check = access_check
         self.connection = connection
         self.storage = storage
+
+    def access(self, permission):
+        if self.access_check:self.access_check("templates."+permission)
 
     def _require_idle(self):
         if self.connection.in_transaction:
             raise DocxError("Завершите текущую операцию с базой перед изменением шаблонов.")
 
     def list_versions(self, document_type=None, variant=None):
+        self.access("read")
         try:
             rows = self.connection.execute(
                 "SELECT id, document_type, variant, name, version, relative_path, sha256, added_at, active "
@@ -67,6 +79,7 @@ class TemplateRepository:
             raise DocxError("Не удалось прочитать реестр шаблонов.") from None
 
     def load(self, version_id):
+        self.access("read")
         try:
             row = self.connection.execute(
                 "SELECT id, document_type, variant, name, version, relative_path, sha256, added_at, active "
@@ -89,9 +102,14 @@ class TemplateRepository:
         data = read_docx(path)
         if hashlib.sha256(data).hexdigest() != version.sha256:
             raise DocxError("SHA-256 шаблона не совпадает с реестром. Исходный файл изменён или повреждён.")
-        return TemplateSource(path, version.sha256)
+        row = self.connection.execute('SELECT code,origin,catalog_snapshot FROM working_template_events WHERE effective_version_id=? ORDER BY id DESC LIMIT 1', (version_id,)).fetchone()
+        required = ()
+        if row and row[1]=='standard':
+            required = tuple(json.loads(row[2])['required_variables'])
+        return TemplateSource(path, version.sha256, required)
 
     def register(self, source, document_type, variant, name, *, activate=True):
+        self.access("write")
         variant = ' '.join(variant.split())
         name = ' '.join(name.split())
         if document_type not in DOCUMENT_TYPES or not variant or not name or len(variant) > 100 or len(name) > 200:
@@ -106,32 +124,52 @@ class TemplateRepository:
         path = self.storage.root / relative
         if path.parent.is_symlink():
             raise DocxError("Каталог шаблонов не должен быть символической ссылкой.")
-        created = False
+        owned = []
         try:
             with self.connection:
                 self.connection.execute('BEGIN IMMEDIATE')
-                version = self.connection.execute(
-                    "SELECT coalesce(max(version), 0) + 1 FROM document_templates WHERE document_type = ? AND variant = ?",
-                    (document_type, variant),
-                ).fetchone()[0]
-                publish_docx(data, path)
-                created = True
-                if activate:
-                    self.connection.execute("UPDATE document_templates SET active = 0 WHERE document_type = ? AND variant = ?", (document_type, variant))
-                cursor = self.connection.execute(
-                    "INSERT INTO document_templates(document_type,variant,name,version,relative_path,sha256,active) VALUES (?,?,?,?,?,?,?)",
-                    (document_type, variant, name, version, relative, hashlib.sha256(data).hexdigest(), activate),
-                )
-                version_id = cursor.lastrowid
+                version_id = self._insert(data, document_type, variant, name, activate, path, relative, owned)
+                if activate:self._record_library_selection(version_id, custom=True)
         except Exception as error:
-            if created:
+            if path in owned:
                 path.unlink(missing_ok=True)
             if isinstance(error, (sqlite3.Error, OSError)):
                 raise DocxError("Не удалось зарегистрировать шаблон. Прежние версии сохранены.") from None
             raise
         return self.load(version_id)
 
+    def _insert(self, data, document_type, variant, name, activate, path, relative, owned):
+        version = self.connection.execute("SELECT coalesce(max(version), 0) + 1 FROM document_templates WHERE document_type=? AND variant=?", (document_type,variant)).fetchone()[0]
+        publish_docx(data, path)
+        owned.append(path)
+        if activate:
+            self.connection.execute("UPDATE document_templates SET active=0 WHERE document_type=? AND variant=?", (document_type,variant))
+        return self.connection.execute("INSERT INTO document_templates(document_type,variant,name,version,relative_path,sha256,active) VALUES (?,?,?,?,?,?,?)", (document_type,variant,name,version,relative,hashlib.sha256(data).hexdigest(),activate)).lastrowid
+
+    def _record_library_selection(self, version_id, *, custom=False):
+        selected=self.load(version_id)
+        previous=self.connection.execute('SELECT code,origin,mode,base_version_id,background_path,background_sha256,catalog_snapshot FROM working_template_events WHERE effective_version_id=? ORDER BY id DESC LIMIT 1',(version_id,)).fetchone()
+        if previous and not custom:
+            code,origin,mode,base,bg,digest,snapshot=previous
+        else:
+            from proficentr.working_library import catalog
+            item=next((item for item in catalog() if (item['document_type'],item['variant'])==(selected.document_type,selected.variant)),None)
+            if not item:return
+            code=item['code'];origin='custom';mode='none';base=version_id;bg='';digest='';snapshot=json.dumps(item,ensure_ascii=False)
+        self.connection.execute('INSERT INTO working_template_events(code,base_version_id,effective_version_id,origin,mode,background_path,background_sha256,catalog_snapshot) VALUES (?,?,?,?,?,?,?,?)',(code,base,version_id,origin,mode,bg,digest,snapshot))
+
+    def supports_contract(self, version_id, contract, trainings):
+        row=self.connection.execute('SELECT origin FROM working_template_events WHERE effective_version_id=? ORDER BY id DESC LIMIT 1',(version_id,)).fetchone()
+        if row and row[0]=='standard' and self.load(version_id).document_type=='contract_person':
+            return contract.customer_type=='student' and len(trainings)==1 and all(t['student_id']==contract.student_id for t in trainings)
+        return True
+
+    def complete_context(self, context):
+        from proficentr.working_library import complete_context
+        return complete_context(self.connection, context)
+
     def activate(self, version_id):
+        self.access("write")
         self._require_idle()
         try:
             with self.connection:
@@ -141,6 +179,7 @@ class TemplateRepository:
                 validate_template(read_docx(self.source(version_id).path))
                 self.connection.execute("UPDATE document_templates SET active = 0 WHERE document_type = ? AND variant = ?", (version.document_type, version.variant))
                 self.connection.execute("UPDATE document_templates SET active = 1 WHERE id = ?", (version_id,))
+                self._record_library_selection(version_id)
         except sqlite3.Error:
             raise DocxError("Не удалось активировать версию. Прежняя активная версия сохранена.") from None
         return self.load(version_id)
@@ -162,7 +201,14 @@ class TemplateRepository:
     def test_document(self, version_id):
         folder = self._export_directory('template-tests')
         destination = folder / ('TEST-unregistered-' + uuid4().hex + '.docx')
-        return generate_document(self.source(version_id), fictional_context(), destination)
+        source=self.source(version_id);context=fictional_context()
+        if source.required_variables:
+            def fill(value):
+                if type(value) is dict:return {k:fill(v) for k,v in value.items()}
+                if type(value) is list:return [fill(v) for v in value]
+                return 'Вымышленные данные' if value=='' else value
+            context=fill(context)
+        return generate_document(source, context, destination)
 
     def editable_copy(self, version_id):
         folder = self._export_directory('template-edits')

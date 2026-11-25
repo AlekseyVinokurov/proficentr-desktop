@@ -266,7 +266,7 @@ def test_migration15_to16_preserves_prior_records(tmp_path,monkeypatch):
     with Database(path) as db:
         assert db.connection.execute('SELECT * FROM students').fetchall()==old
         assert db.connection.execute('SELECT count(*) FROM admission_documents').fetchone()==(0,)
-        assert db.connection.execute('SELECT max(version) FROM schema_migrations').fetchone()==(16,)
+        assert db.connection.execute('SELECT max(version) FROM schema_migrations').fetchone()==(len(MIGRATIONS),)
     backup=next((tmp_path/'migration-backups').glob('*.sqlite3'))
     with sqlite3.connect(backup) as db:assert db.execute('SELECT max(version) FROM schema_migrations').fetchone()==(15,)
 

@@ -74,6 +74,13 @@ def main() -> int:
                     if window.pages.currentIndex() != expected:
                         raise RuntimeError("Не работает навигация.")
                 window.navigation.setCurrentRow(0)
+                from proficentr.working_library import catalog, RESOURCE_ROOT
+                import hashlib
+                from proficentr.docx_engine import validate_template
+                for item in catalog():
+                    resource=(RESOURCE_ROOT/item['path']).read_bytes()
+                    if hashlib.sha256(resource).hexdigest()!=item['sha256']:raise ValueError('Повреждён ресурс рабочего шаблона.')
+                    validate_template(resource)
                 # CI fixtures may contain templates: exercise the renderer in the frozen EXE.
                 templates = window.settings_page.templates_page.repository
                 for version in templates.list_versions():

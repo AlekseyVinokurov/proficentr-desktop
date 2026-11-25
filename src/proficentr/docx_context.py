@@ -11,7 +11,14 @@ PROGRAM_FIELDS = "name direction kind hours code edition qualification grade".sp
 TRAINING_FIELDS = "start_date end_date state".split()
 ATTESTATION_FIELDS = "attestation_result grade qualification qualification_grade attestation_note".split()
 COMPLETION_FIELDS = "completion_date completion_basis protocol_number protocol_date attestation_date".split()
+WORK_FIELDS = ['actual_study_end_date', 'admission_basis', 'attestation_basis', 'attestation_form', 'certificate_basis', 'certificate_number', 'completed_hours', 'contract_place', 'contract_total_words', 'customer_bank_details', 'customer_contact', 'director_authority', 'education_basis', 'education_type', 'effective_date', 'expulsion_basis_documents', 'expulsion_legal_basis', 'identity_document', 'organization_bank_details', 'organization_city', 'organization_contact', 'program_type', 'qualification_basis', 'qualification_grade_line', 'recipient_authority', 'recipient_full_name', 'registry_period', 'report_date', 'responsible_full_name', 'retraining_outcome_text', 'student_contact', 'student_full_name_dative', 'study_form', 'study_outcome']
+WORK_FIELDS.extend(('qualification_document_type','training_price'))
+ROW_WORK_FIELDS = ['assessment_result', 'contract_details', 'expulsion_reason', 'practical_result', 'practical_task', 'program_hours', 'program_name', 'program_type', 'qualification_document_type', 'row_number', 'study_form', 'theory_result', 'training_price']
 SCHEMA = {
+    "work": dict.fromkeys(WORK_FIELDS),
+    "commission": [dict.fromkeys(("member_full_name", "member_role_and_position", "member_role"))],
+    "modules": [dict.fromkeys(("module_name", "module_completed_hours", "module_result"))],
+    "documents": [dict.fromkeys(("row_number", "student_full_name", "program_name", "document_type", "document_series", "document_number", "registration_number", "issue_date", "delivery_summary", "delivery_evidence"))],
     "admission": dict.fromkeys("title scope pd_basis pd_reference pd_scope valid_until".split()),
     "issued": dict.fromkeys("kind number date blank_series blank_number completion_date completion_order_number completion_order_date qualification qualification_grade".split()),
     "completion": dict.fromkeys(("date", "basis")),
@@ -25,7 +32,7 @@ SCHEMA = {
     "training": dict.fromkeys(TRAINING_FIELDS),
     "document": dict.fromkeys(("number", "date", "is_test", "is_draft")),
     "group": dict.fromkeys(("name", "start_date", "end_date")),
-    "students": [dict.fromkeys(STUDENT_FIELDS + ["start_date", "end_date"] + ATTESTATION_FIELDS + COMPLETION_FIELDS)],
+    "students": [dict.fromkeys(STUDENT_FIELDS + ["start_date", "end_date"] + ATTESTATION_FIELDS + COMPLETION_FIELDS + ROW_WORK_FIELDS)],
 }
 MAX_STUDENTS = 500
 MAX_CONTEXT_BYTES = 1024 * 1024
@@ -68,8 +75,12 @@ def validate_context(context):
     return visit(context, SCHEMA)
 
 
+def empty_context():
+    return {root: dict.fromkeys(fields, '') if type(fields) is dict else [] for root,fields in SCHEMA.items()}
+
+
 def fictional_context():
-    context = {root: {field: '' for field in fields} for root, fields in SCHEMA.items() if root != 'students'}
+    context = empty_context()
     context['center'].update(full_name='Учебный центр «Пример» (вымышленный)', short_name='УЦ «Пример»', director_name='Примеров Пример Примерович')
     context['student'].update(full_name='Тестов Иван Примерович', surname='Тестов', first_name='Иван', patronymic='Примерович', birth_date='1990-01-01')
     context['customer'].update(full_name='Заказчик «Образец» (вымышленный)', kind='legal_entity')
@@ -88,6 +99,11 @@ def fictional_context():
         row.update(dict.fromkeys(ATTESTATION_FIELDS, ''))
         row['attestation_result'] = 'Успешно прошёл'
         row.update(completion_date='2020-02-10', completion_basis='Протокол ТЕСТ-П-2020-0001 от 2020-02-10', protocol_number='ТЕСТ-П-2020-0001', protocol_date='2020-02-10', attestation_date='2020-02-10')
+    context['work'].update(dict.fromkeys(WORK_FIELDS, 'Вымышленное значение'))
+    for row in context['students']:row.update(dict.fromkeys(ROW_WORK_FIELDS, 'Вымышленное значение'))
+    context['commission']=[dict.fromkeys(SCHEMA['commission'][0], 'Тестовый член комиссии')]
+    context['modules']=[dict.fromkeys(SCHEMA['modules'][0], 'Тестовый модуль')]
+    context['documents']=[dict.fromkeys(SCHEMA['documents'][0], 'Вымышленный документ')]
     return deepcopy(context)
 
 
@@ -99,7 +115,7 @@ def field_guide():
         'Разрешённые поля (только простые значения):',
     ]
     for root, fields in SCHEMA.items():
-        if root != 'students':
+        if type(fields) is dict:
             lines.append(root + ': ' + ', '.join(root + '.' + field for field in fields))
     lines += [
         '',
@@ -117,6 +133,7 @@ def field_guide():
         '{%tr for row in students %}; следующая строка — {{ row.full_name }} и другие поля;',
         'последняя служебная строка содержит {%tr endfor %}. Служебные строки удаляются.',
         'Служебные теги должны занимать отдельные строки/абзацы.',
+        'Также разрешены списки commission, modules, documents; поля перечислены в карточке рабочего шаблона.',
         '',
         'Функции, фильтры, арифметика, вложенные циклы, include/import, RichText,',
         'поддокументы, макросы, вложения и внешние ссылки не поддерживаются.',

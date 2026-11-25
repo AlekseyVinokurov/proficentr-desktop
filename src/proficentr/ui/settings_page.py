@@ -8,6 +8,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QSignalBlocker
 
+from proficentr.working_library import WorkingLibrary
+from proficentr.ui.working_templates_page import WorkingTemplatesPage
 from proficentr.regulatory_documents import RegulatoryRepository
 from proficentr.ui.regulatory_page import RegulatoryPage
 from proficentr.admission import AdmissionRepository
@@ -70,6 +72,8 @@ class SettingsPage(QWidget):
         self.tabs.addTab(self.admission_rules_page, "Требования приёма")
         self.regulatory_page = RegulatoryPage(RegulatoryRepository(database.connection, storage) if database else None)
         self.tabs.addTab(self.regulatory_page, "Нормативные документы")
+        self.working_templates_page = WorkingTemplatesPage(WorkingLibrary(database.connection, storage) if database else None)
+        self.tabs.addTab(self.working_templates_page, "Рабочие шаблоны")
         self._tab_index = 0
         self.tabs.currentChanged.connect(self._change_tab)
 

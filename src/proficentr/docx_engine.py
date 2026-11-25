@@ -180,7 +180,7 @@ class RestrictedEnvironment(ImmutableSandboxedEnvironment):
         self.render_budget = MAX_RENDER_BYTES
         self.max_value_size = 10_000 if context is None else max(
             [64] + [len(str(value).encode('utf-8')) for value in _leaves(context)])
-        self.list_size = 500 if context is None else len(context.get('students', []))
+        self.list_size = 500 if context is None else max((len(value) for value in context.values() if type(value) is list), default=0)
 
     def is_safe_attribute(self, obj, attr, value):
         return False
@@ -252,12 +252,12 @@ class RestrictedEnvironment(ImmutableSandboxedEnvironment):
             return sum(self._check(item, scope, depth=depth + 1, in_loop=in_loop)
                        for item in node.body + node.elif_ + node.else_)
         if kind is nodes.For:
-            if (in_loop or type(node.iter) is not nodes.Name or node.iter.name != 'students'
+            if (in_loop or type(node.iter) is not nodes.Name or node.iter.name not in {key for key,value in SCHEMA.items() if type(value) is list}
                     or type(node.target) is not nodes.Name or node.target.name.startswith('_')
                     or node.target.name in SCHEMA or node.target.name == 'loop'
                     or node.recursive or node.test is not None or node.else_):
                 raise DocxError("Разрешён один уровень цикла «for row in students» без фильтров и else.")
-            inner = dict(scope, **{node.target.name: SCHEMA['students'][0]})
+            inner = dict(scope, **{node.target.name: SCHEMA[node.iter.name][0]})
             return self.list_size * sum(self._check(item, inner, depth=depth + 1, in_loop=True) for item in node.body)
         raise DocxError("Разрешены только подстановка полей, if/else и цикл по students.")
 
@@ -372,4 +372,14 @@ def generate_document(version, data, destination):
     source = read_docx(version.path)
     if hashlib.sha256(source).hexdigest() != version.sha256:
         raise DocxError("SHA-256 шаблона не совпадает с реестром. Используйте сохранённую исходную версию.")
+    def value_at(value, keys):
+        if not keys:return value
+        if type(value) is list:return [value_at(row,keys) for row in value]
+        return value_at(value.get(keys[0]),keys[1:]) if type(value) is dict else None
+    def missing(value):
+        if type(value) is list:return not value or any(missing(item) for item in value)
+        return value is None or value==''
+    for variable in getattr(version, 'required_variables', ()):
+        if missing(value_at(data,variable.split('.'))):
+            raise DocxError('Заполните обязательное поле шаблона: ' + variable + '. Дополнительные сведения доступны в библиотеке рабочих шаблонов.')
     return publish_docx(render_docx(source, data), destination)

@@ -13,7 +13,7 @@ from docx import Document
 from proficentr.attestations import AttestationError, AttestationProtocol, AttestationResult, KINDS, RESULTS
 from proficentr.contract_repository import ContractRepository, encoded
 from proficentr.contracts import number_key
-from proficentr.docx_context import SCHEMA, validate_context
+from proficentr.docx_context import SCHEMA, validate_context, empty_context
 from proficentr.docx_engine import generate_document, publish_docx, read_docx, render_docx, validate_package
 from proficentr.document_templates import TemplateRepository
 from proficentr.students import iso_date
@@ -139,7 +139,7 @@ class AttestationRepository:
         return [t for t in self.templates.list_versions('protocol_' + protocol.direction) if t.active]
 
     def _context(self, protocol, trainings, results):
-        context = {root: dict.fromkeys(fields, '') for root, fields in SCHEMA.items() if root != 'students'}
+        context = empty_context()
         context['center'] = self._entity('training_center', tuple(SCHEMA['center']), 1)
         if not context['center']['full_name']:
             raise AttestationError('Заполните карточку учебного центра в настройках.')
@@ -165,7 +165,7 @@ class AttestationRepository:
         context['protocol'].update(number='ПРОЕКТ — НЕ ЗАРЕГИСТРИРОВАН', date=protocol.protocol_date, attestation_date=protocol.attestation_date,
                                    kind=protocol.kind, chair=protocol.chair, members=protocol.members, note=protocol.note)
         context['document'].update(number=context['protocol']['number'], date=protocol.protocol_date, is_test=False, is_draft=True)
-        return validate_context(context)
+        return validate_context(self.templates.complete_context(context))
 
     def _review(self, protocol_id):
         protocol = self.load(protocol_id)

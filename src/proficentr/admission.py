@@ -10,7 +10,7 @@ import sqlite3
 from uuid import uuid4
 
 from proficentr.document_templates import TemplateRepository
-from proficentr.docx_context import SCHEMA, validate_context
+from proficentr.docx_context import SCHEMA, validate_context, empty_context
 from proficentr.docx_engine import generate_document, read_docx
 from proficentr.document_delivery import read_evidence
 from proficentr.contract_repository import encoded
@@ -449,12 +449,13 @@ class AdmissionRepository:
                         raise AdmissionError('Сначала укажите согласие как правовое основание, его реквизиты и область обработки.')
                 if rule.document_type not in ('application','consent'):raise AdmissionError('DOCX формируется только для заявления или отдельного согласия.')
                 template=self.templates.load(template_id)
-                if not template.active or template.document_type!=rule.document_type or template.variant!=rule.template_variant:
+                if not template.active or template.document_type!=rule.document_type or template.variant not in (rule.template_variant,rule.template_variant+'-'+json.loads(t.program_snapshot)['direction']):
                     raise AdmissionError('Выберите активный утверждённый шаблон указанного типа и варианта.')
-                context={root:dict.fromkeys(fields,'') for root,fields in SCHEMA.items() if root!='students'}
+                context=empty_context()
                 context['students']=[]
                 student=asdict(self.students.load(t.student_id));student['full_name']=self.students.load(t.student_id).full_name
                 context['student']={k:student.get(k,'') for k in SCHEMA['student']}
+                context['students']=[dict(context['student'],start_date=t.start_date,end_date=t.end_date)]
                 center=asdict(TrainingCenterRepository(self.connection,self.storage).load())
                 context['center']={k:center.get(k,'') for k in SCHEMA['center']}
                 p=json.loads(t.program_snapshot)
@@ -464,7 +465,7 @@ class AdmissionRepository:
                 c=self.context(training_id)
                 context['admission']={'title':rule.title,'scope':rule.scope,'pd_basis':BASES[c['pd_basis']],
                                       'pd_reference':c['pd_reference'],'pd_scope':c['pd_scope'],'valid_until':valid_until}
-                context=validate_context(context)
+                context=validate_context(self.templates.complete_context(context))
                 relative='documents/admission/'+uuid4().hex+'.docx'
                 self.storage.require_available();candidate=self._path(relative);candidate.parent.mkdir(parents=True,exist_ok=True)
                 generate_document(self.templates.source(template_id),context,candidate);path=candidate

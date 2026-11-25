@@ -22,3 +22,6 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.setuptools.package-data]
+proficentr = ["resources/working_templates/manifest.json", "resources/working_templates/*/*.docx"]

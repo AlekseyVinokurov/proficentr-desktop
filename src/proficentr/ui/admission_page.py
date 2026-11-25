@@ -131,7 +131,7 @@ class AdmissionFormDialog(QDialog):
         self.setWindowTitle('Сформировать и зарегистрировать неподписанный DOCX');layout=QVBoxLayout(self);form=QFormLayout()
         self.template=QComboBox()
         for t in repository.templates.list_versions(rule.document_type):
-            if t.active and t.variant==rule.template_variant:self.template.addItem(t.name,t.id)
+            if t.active and t.variant in (rule.template_variant,rule.template_variant+'-'+json.loads(repository.trainings.load(training_id).program_snapshot)['direction']):self.template.addItem(t.name,t.id)
         form.addRow('Утверждённый шаблон',self.template)
         hint=QLabel(f'Подключите утверждённую форму «{TYPES[rule.document_type]}» в «Настройки → Шаблоны документов». Вариант формы задаётся в настройках требования приёма. Создание файла не подтверждает подписание.')
         hint.setWordWrap(True);layout.addWidget(hint)

@@ -54,7 +54,7 @@ jobs:
       - name: Тесты
         run: python -m pytest -q
       - name: Сборка onedir
-        run: python -m PyInstaller --noconfirm --clean --onedir --windowed --name Proficentr --paths src run_proficentr.py
+        run: python -m PyInstaller --noconfirm --clean --onedir --windowed --name Proficentr --paths src --add-data "src/proficentr/resources;proficentr/resources" run_proficentr.py
       - name: Сборка отдельного небольшого helper без Qt
         run: |
           python -m PyInstaller --noconfirm --clean --onefile --windowed --name ProficentrUpdater --paths src run_updater.py

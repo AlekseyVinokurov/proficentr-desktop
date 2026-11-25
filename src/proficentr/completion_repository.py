@@ -17,7 +17,7 @@ from proficentr.attestations import RESULTS
 from proficentr.completion_orders import CompletionOrder, CompletionEntry, CompletionError, KINDS
 from proficentr.contract_repository import encoded
 from proficentr.contracts import number_key
-from proficentr.docx_context import SCHEMA, validate_context
+from proficentr.docx_context import SCHEMA, validate_context, empty_context
 from proficentr.docx_engine import (RestrictedEnvironment, generate_document, publish_docx,
                                     read_docx, render_docx, validate_package)
 from proficentr.document_templates import TemplateRepository
@@ -171,7 +171,7 @@ class CompletionRepository:
         return self.load(key)
 
     def _context(self, order, trainings, entries):
-        context = {root:dict.fromkeys(fields,'') for root,fields in SCHEMA.items() if root != 'students'}
+        context = empty_context()
         context['center'] = self._entity('training_center',tuple(SCHEMA['center']),1)
         if not context['center']['full_name']:
             raise CompletionError('Заполните карточку учебного центра в настройках.')
@@ -206,7 +206,7 @@ class CompletionRepository:
             context['protocol'].update(number=basis['number'],date=basis['date'],attestation_date=basis['attestation_date'],kind=basis['kind'])
         context['order'].update(kind=order.kind,student_count=len(students))
         context['document'].update(number='ПРОЕКТ — НЕ ЗАРЕГИСТРИРОВАН',date=order.order_date,is_draft=True,is_test=False)
-        return validate_context(context)
+        return validate_context(self.templates.complete_context(context))
 
     def suitable_templates(self, order):
         variant = order.direction + '-' + order.kind
