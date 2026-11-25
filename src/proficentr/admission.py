@@ -32,6 +32,13 @@ EDUCATION_BASES = {'':'Не проверено', 'spo':'Имеется СПО', 
 MIN_HOURS = {'dpo_upskilling':16, 'dpo_retraining':250}
 
 
+def program_problems(program):
+    minimum = MIN_HOURS.get(program['kind'])
+    if minimum and program['hours'] < minimum:
+        return (f"Программа «{program['full_name']}»: минимум {minimum} академических часов (приказ Минобрнауки № 266).",)
+    return ()
+
+
 class AdmissionError(ValueError):
     pass
 
@@ -106,8 +113,10 @@ class AdmissionRepository:
         except (sqlite3.Error,OSError):
             raise AdmissionError('Сведения приёма не сохранены. Проверьте базу, доступ к хранилищу и свободное место.') from None
 
-    def rules(self):
-        rows = self.connection.execute('SELECT * FROM admission_rules WHERE id IN (SELECT max(id) FROM admission_rules GROUP BY rule_key) ORDER BY id').fetchall()
+    def rules(self, *, include_history=False):
+        query = ('SELECT * FROM admission_rules ORDER BY id' if include_history else
+                 'SELECT * FROM admission_rules WHERE id IN (SELECT max(id) FROM admission_rules GROUP BY rule_key) ORDER BY id')
+        rows = self.connection.execute(query).fetchall()
         result=[]
         for row in rows:
             values=dict(zip(RULE_FIELDS,row))
@@ -198,10 +207,14 @@ class AdmissionRepository:
     def applicable(self,training_id):
         t = self.trainings.load(training_id); program=json.loads(t.program_snapshot)
         context=self.context(training_id)
+        return self.program_rules(program,t.program_id,pd_basis=context['pd_basis'],pd_scope=context['pd_scope'])
+
+    def program_rules(self,program,program_id=None,*,pd_basis='unknown',pd_scope=''):
+        """Единый подбор правил для предварительного перечня и конкретного приёма."""
         rules=[r for r in self.rules() if r.active and r.program_kind in ('',program['direction'],program['kind'])
-               and (r.program_id is None or r.program_id==t.program_id)]
-        if context['pd_basis']!='unknown':rules.append(AdmissionRule('pd_consent','Отдельное согласие на обработку ПД',source='law',reference='152-ФЗ, статьи 6 и 9; основание указано для этого обучения',
-                    required=context['pd_basis']=='consent',document_type='consent',sign_required=True,reusable=True,scope=context['pd_scope']))
+               and (r.program_id is None or r.program_id==program_id)]
+        if pd_basis!='unknown':rules.append(AdmissionRule('pd_consent','Отдельное согласие на обработку ПД',source='law',reference='152-ФЗ, статьи 6 и 9; основание указано для этого обучения',
+                    required=pd_basis=='consent',document_type='consent',sign_required=True,reusable=True,scope=pd_scope))
         return rules
 
     @staticmethod
@@ -285,8 +298,7 @@ class AdmissionRepository:
         student=self.students.load(training.student_id);program=json.loads(training.program_snapshot)
         context=self.context(training_id);flags=json.loads(context['conditions']);items=[];problems=[];evidence=[]
         if training.state=='excluded':problems.append('Обучение исключено из подготовительного состава; зачисление недоступно.')
-        if program['kind'] in MIN_HOURS and program['hours']<MIN_HOURS[program['kind']]:
-            problems.append(f"Программа «{program['full_name']}»: минимум {MIN_HOURS[program['kind']]} академических часов (приказ Минобрнауки № 266).")
+        problems.extend(program_problems(program))
         if context['pd_basis']=='unknown' or not context['pd_reference'] or not context['pd_scope']:
             problems.append(f'{student.full_name} — не указаны правовое основание, реквизиты основания и область обработки персональных данных.')
         for rule in self.applicable(training_id):
@@ -296,7 +308,7 @@ class AdmissionRepository:
             applicable=True
             if rule.condition_tag:
                 flag=flags.get(rule.condition_tag)
-                if flag is None and rule.required:problems.append(f'{rule.title}: укажите применимость условия «{rule.condition_tag}».')
+                if flag is None and rule.required:problems.append(f'{rule.title}: укажите применимость условия для этого приёма.')
                 elif not flag:applicable=False;state='not_required';reason=context['note']
             if rule.rule_key=='pd_consent' and context['pd_basis'] in ('contract','law'):
                 applicable=False;state='not_required';reason=context['pd_reference']
@@ -474,14 +486,15 @@ class AdmissionRepository:
         for day,who,state,reason,doc_id,snapshot in self.connection.execute(
                 'SELECT day,responsible,state,reason,document_id,rule_snapshot FROM admission_checks WHERE training_id=? ORDER BY id',(training_id,)):
             rule=json.loads(snapshot)
-            lines.append(f"{day} · {who} · {rule['title']} · {STATES[state]} · {reason} · документ ID {doc_id or 'нет'}")
-            lines.append(f"Основание: {SOURCES[rule['source']]} · {rule['reference']} · версия {rule['version']}")
+            lines.append(f"{day} · {who} · {rule['title']} · {STATES[state]} · {reason}")
+            lines.append(f"Основание: {SOURCES[rule['source']]} · {rule['reference']}")
         for row in self.connection.execute('SELECT day,responsible,pd_basis,pd_reference,pd_scope,note FROM admission_context_events WHERE training_id=? ORDER BY id',(training_id,)):
             day,who,basis,reference,scope,note=row
             lines.append(f'Основание ПД: {day} · {who} · {BASES[basis]} · {reference} · {scope} · {note}')
         for day,who,state,note,document_id,signed in self.connection.execute(
                 'SELECT e.day,e.responsible,e.state,e.note,e.document_id,e.signed FROM admission_document_events e WHERE e.document_id IN (SELECT document_id FROM admission_checks WHERE training_id=?) ORDER BY e.id',(training_id,)):
-            lines.append(f"Документ ID {document_id}: {day} · {who} · {STATES.get(state,'Отозвано')} · подписание: {'подтверждено' if signed else 'не подтверждено'} · {note}")
+            title = self.document(document_id)['title']
+            lines.append(f"{title}: {day} · {who} · {STATES.get(state,'Отозвано')} · подписание: {'подтверждено' if signed else 'не подтверждено'} · {note}")
         return lines
 
     def enrollment_problems(self,training_ids):

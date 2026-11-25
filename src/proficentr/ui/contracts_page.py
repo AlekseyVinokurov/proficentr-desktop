@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
 
 from proficentr.contracts import Contract, ContractError, CUSTOMER_TYPES, PERSON_FIELDS, STATES, format_price, price_from_text
 from proficentr.docx_context import DocxError
+from proficentr.document_templates import DOCUMENT_TYPES
+from proficentr.contract_repository import TEMPLATE_TYPES
 from proficentr.ui.groups_page import make_table, fill_table, selected_id
 from proficentr.ui.templates_page import open_local_docx
 
@@ -58,9 +60,11 @@ class ContractDialog(QDialog):
                                 ('Условия оплаты *', self.terms), ('Примечание', self.note), ('Активный шаблон', self.template)):
             widget.setAccessibleName(caption)
             form.addRow(caption, widget)
-        note = QLabel('Для выбора формы используйте в реестре шаблонов варианты dpo/po или dpo-…/po-…. При нескольких вариантах выберите явно. Если формы нет, загрузите её в «Настройки → Шаблоны документов». Стоимость общая для всех выбранных обучений; валюта — рубли.')
+        note = QLabel('Выберите утверждённую форму для вида обучения и заказчика. Стоимость общая для всех выбранных обучений; валюта — рубли.')
         note.setWordWrap(True)
         form.addRow(note)
+        self.template_hint = QLabel(); self.template_hint.setWordWrap(True)
+        form.addRow(self.template_hint)
         self.tabs.addTab(details, 'Договор')
         trainings = QWidget(); training_layout = QVBoxLayout(trainings)
         filters = QHBoxLayout()
@@ -217,11 +221,14 @@ class ContractDialog(QDialog):
         try:
             versions = self.repository.suitable_templates(replace(self.original, customer_type=self.customer_type.currentData()), self.training_ids)
             for version in versions:
-                self.template.addItem(f'{version.name} · {version.variant} · версия {version.version}', version.id)
+                self.template.addItem(version.name, version.id)
             if self.template.findData(previous) > 0:
                 self.template.setCurrentIndex(self.template.findData(previous))
             elif len(versions) == 1:
                 self.template.setCurrentIndex(1)
+            self.template_hint.setText('' if versions else
+                'Нет утверждённой формы. Подключите шаблон «' + DOCUMENT_TYPES[TEMPLATE_TYPES[self.customer_type.currentData()]] +
+                '» для выбранного направления обучения в «Настройки → Шаблоны документов».')
         except ERRORS as error:
             self.status.setText(str(error))
 

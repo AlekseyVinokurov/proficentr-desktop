@@ -7,17 +7,22 @@ import sqlite3
 from proficentr.training_repository import TrainingRepositoryError
 from proficentr.student_repository import StudentRepositoryError
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QMarginsF
+from PySide6.QtGui import QTextDocument, QPageSize
+from PySide6.QtPrintSupport import QPrinter, QPrintDialog
 from PySide6.QtWidgets import (QCheckBox,QComboBox,QDialog,QFileDialog,QFormLayout,QHBoxLayout,QLabel,
-    QLineEdit,QMessageBox,QPlainTextEdit,QPushButton,QScrollArea,QGridLayout,QHeaderView,QVBoxLayout,QWidget)
+    QGroupBox,QLineEdit,QMessageBox,QPlainTextEdit,QPushButton,QScrollArea,QGridLayout,QHeaderView,QSizePolicy,QVBoxLayout,QWidget)
 
 from proficentr.admission import AdmissionRule, STATES, SOURCES, TYPES, BASES, EDUCATION_BASES
+from dataclasses import asdict
+from proficentr.admission_checklist import GROUPS, checklist, memo_html
+from proficentr.program_repository import ProgramRepository, ProgramRepositoryError
 from proficentr.programs import KINDS
 from proficentr.ui.groups_page import make_table,fill_table,selected_id
 from proficentr.ui.training_dialogs import TrainingDialog
 from proficentr.ui.templates_page import open_local_docx
 
-ERRORS=(ValueError,OSError,sqlite3.Error,TrainingRepositoryError,StudentRepositoryError)
+ERRORS=(ValueError,OSError,sqlite3.Error,TrainingRepositoryError,StudentRepositoryError,ProgramRepositoryError)
 
 
 def choices(values,current=''):
@@ -54,7 +59,7 @@ class AdmissionContextDialog(QDialog):
         self.flags={};flags=json.loads(c['conditions'])
         for tag in dict.fromkeys(r.condition_tag for r in repository.applicable(training_id) if r.condition_tag):
             edit=choices({'unknown':'Не определено','yes':'Применяется','no':'Не применяется'},'yes' if flags.get(tag) is True else 'no' if flags.get(tag) is False else 'unknown')
-            self.flags[tag]=edit;form.addRow(tag,edit)
+            self.flags[tag]=edit;form.addRow(' / '.join(r.title for r in repository.applicable(training_id) if r.condition_tag==tag),edit)
         self.note=line(form,'Основание неприменимости условий / примечание',c['note'])
         self.day=line(form,'Дата подтверждения',date.today().isoformat());self.responsible=line(form,'Ответственное лицо *')
         hint=QLabel('Наличие договора не выбирает основание автоматически. Дополнительные согласия имеют отдельные цели; отзыв согласия не прекращает обработку по самостоятельному законному основанию.')
@@ -126,9 +131,9 @@ class AdmissionFormDialog(QDialog):
         self.setWindowTitle('Сформировать и зарегистрировать неподписанный DOCX');layout=QVBoxLayout(self);form=QFormLayout()
         self.template=QComboBox()
         for t in repository.templates.list_versions(rule.document_type):
-            if t.active and t.variant==rule.template_variant:self.template.addItem(f'{t.name} · версия {t.version}',t.id)
+            if t.active and t.variant==rule.template_variant:self.template.addItem(t.name,t.id)
         form.addRow('Утверждённый шаблон',self.template)
-        hint=QLabel(f'Шаблоны подключаются в «Настройки → Шаблоны документов»: тип {TYPES[rule.document_type]}, вариант {rule.template_variant}. Подключайте утверждённый отдельный документ; готовых юридических текстов приложение не содержит.')
+        hint=QLabel(f'Подключите утверждённую форму «{TYPES[rule.document_type]}» в «Настройки → Шаблоны документов». Вариант формы задаётся в настройках требования приёма. Создание файла не подтверждает подписание.')
         hint.setWordWrap(True);layout.addWidget(hint)
         self.until=line(form,'Действует до (необязательно, ГГГГ-ММ-ДД)')
         self.day=line(form,'Дата документа',date.today().isoformat());self.responsible=line(form,'Ответственное лицо *')
@@ -190,14 +195,28 @@ class AdmissionRuleDialog(QDialog):
 class AdmissionPage(QWidget):
     templates_requested=Signal()
     enrollment_requested=Signal(object,object)
+    contract_requested=Signal(object,object)
 
     def __init__(self,repository):
         super().__init__();self.repository=repository;self.assessment=None;self.items={}
         layout=QVBoxLayout(self)
         title=QLabel('Приём на обучение')
         font=title.font();font.setPointSize(20);font.setBold(True);title.setFont(font);layout.addWidget(title)
-        self.empty=QLabel('Чтобы проверить документы для поступления, выберите существующее обучение или создайте новое')
+        self.empty=QLabel('Выберите вид обучения или программу — перечень можно посмотреть и распечатать до оформления слушателя.')
         self.empty.setWordWrap(True);layout.addWidget(self.empty)
+        self.preview_selectors=QWidget();preview_form=QFormLayout(self.preview_selectors)
+        self.kind=QComboBox()
+        for direction,kinds in KINDS.items():
+            for key,label in kinds.items():self.kind.addItem(('ДПО' if direction=='dpo' else 'ПО')+' — '+label,key)
+        self.program=QComboBox();self.program.addItem('Программа не выбрана',None)
+        preview_form.addRow('Вид обучения',self.kind);preview_form.addRow('Программа из справочника',self.program)
+        layout.addWidget(self.preview_selectors)
+        self.print_button=QPushButton('Распечатать памятку');self.print_button.clicked.connect(self.print_memo)
+        self.preview_button=QPushButton('Вернуться к перечню без слушателя');self.preview_button.clicked.connect(self.open_preview)
+        preview_actions=QHBoxLayout();preview_actions.addWidget(self.print_button);preview_actions.addWidget(self.preview_button)
+        layout.addLayout(preview_actions)
+        self.kind.currentIndexChanged.connect(self.kind_changed)
+        self.program.currentIndexChanged.connect(self.program_changed)
         filters=QHBoxLayout()
         self.choose_button=QPushButton('Выбрать обучение');self.choose_button.clicked.connect(self.choose_training)
         self.new_button=QPushButton('Новое обучение');self.new_button.clicked.connect(self.new_training)
@@ -218,7 +237,11 @@ class AdmissionPage(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(2,QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(3,QHeaderView.ResizeMode.ResizeToContents)
         self.table.setMinimumHeight(180)
-        body.addWidget(self.table)
+        # Existing selection and record dialogs use this model; the visible rows are grouped by action.
+        self.table.setParent(self);self.table.hide()
+        self.group_layouts=[]
+        for heading in GROUPS:
+            box=QGroupBox(heading);group_layout=QVBoxLayout(box);body.addWidget(box);self.group_layouts.append(group_layout)
         self.problems=QPlainTextEdit();self.problems.setReadOnly(True);self.problems.setMaximumHeight(115);body.addWidget(self.problems)
         self.action_hint=QLabel('Выберите документ в перечне, чтобы учесть получение или проверить подтверждение.')
         self.action_hint.setWordWrap(True);body.addWidget(self.action_hint)
@@ -234,12 +257,14 @@ class AdmissionPage(QWidget):
         for n,button in enumerate((self.form_button,self.record_button,self.reuse_button,self.copy_button,self.revoke_button,self.history_button,templates,self.order_button)):
             actions.addWidget(button,n//2,n%2)
         body.addLayout(actions)
+        body.addStretch()
         scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setWidget(self.workspace)
         self.work_scroll=scroll;layout.addWidget(scroll,1)
         self.empty_space=QWidget();layout.addWidget(self.empty_space,1)
         self.table.itemSelectionChanged.connect(self.selection_changed)
         self.table.itemDoubleClicked.connect(lambda _:self.edit_record() if self.record_button.isEnabled() else None)
         self.search.editingFinished.connect(self.reload_trainings)
+        self.reload_programs()
         self.reload_trainings()
 
     def choose_training(self):
@@ -274,7 +299,7 @@ class AdmissionPage(QWidget):
         current=selected if selected is not None else self.training.currentData();self.training.blockSignals(True);self.training.clear()
         if self.repository:
             for key,name,snapshot,start in self.repository.training_options(query=self.search.text()):
-                p=json.loads(snapshot);self.training.addItem(f'{name} — {p["full_name"]} ({start}, ID {key})',key)
+                p=json.loads(snapshot);self.training.addItem(f'{name} — {p["full_name"]} ({start})',key)
         self.training.setCurrentIndex(self.training.findData(current) if current is not None else -1);self.training.blockSignals(False);self.refresh()
 
     def open_training(self,training_id):
@@ -283,10 +308,66 @@ class AdmissionPage(QWidget):
     def new_training(self):
         if not self.repository:return
         dialog=TrainingDialog(self.repository.trainings,parent=self)
+        if self.program.currentData() is not None:
+            dialog.program.setCurrentIndex(dialog.program.findData(self.program.currentData()))
         dialog.exec()
         if dialog.saved_training:self.reload_trainings(dialog.saved_training.id)
 
+    def reload_programs(self):
+        selected=self.program.currentData();self.program.blockSignals(True);self.program.clear()
+        self.program.addItem('Программа не выбрана',None)
+        if self.repository:
+            for program in ProgramRepository(self.repository.connection).search():self.program.addItem(program.full_name,program.id)
+        self.program.setCurrentIndex(max(0,self.program.findData(selected)));self.program.blockSignals(False)
+
+    def open_preview(self):
+        self.training.setCurrentIndex(-1);self.refresh()
+
+    def kind_changed(self):
+        self.program.blockSignals(True);self.program.setCurrentIndex(0);self.program.blockSignals(False)
+        self.open_preview()
+
+    def program_changed(self):
+        self.open_preview()
+
+    def print_memo(self):
+        self.refresh()
+        if not self.checklist:return
+        printer=QPrinter(QPrinter.PrinterMode.HighResolution)
+        printer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+        printer.setPageMargins(QMarginsF(12,12,12,12))
+        dialog=QPrintDialog(printer,self);dialog.setWindowTitle('Распечатать памятку')
+        if dialog.exec()==QDialog.DialogCode.Accepted:
+            document=QTextDocument();document.setDefaultStyleSheet('body {font-size: 10pt;} h1 {font-size: 16pt;} h2 {font-size: 12pt;} p {margin: 6px 0;}')
+            document.setHtml(memo_html(self.checklist));document.print_(printer)
+
+    def render_groups(self):
+        for group_layout in self.group_layouts:
+            while group_layout.count():
+                widget=group_layout.takeAt(0).widget()
+                if widget:widget.hide();widget.deleteLater()
+        if not self.checklist:return
+        for group_layout,rows in zip(self.group_layouts,self.checklist.groups):
+            for entry in rows:
+                widget=QWidget();row=QHBoxLayout(widget);row.setContentsMargins(0,0,0,0)
+                label=QLabel(entry.title+'\n'+entry.detail);label.setTextFormat(Qt.TextFormat.PlainText);label.setWordWrap(True);row.addWidget(label,1)
+                label.setMinimumHeight(label.fontMetrics().height()*(2 if entry.detail else 1))
+                widget.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Minimum)
+                if self.assessment and entry.key in self.items:
+                    number=list(self.items).index(entry.key)
+                    original=self.table.cellWidget(number,3)
+                    action=QPushButton(original.text());action.setEnabled(original.isEnabled());action.setToolTip(original.toolTip())
+                    action.clicked.connect(lambda checked=False,n=number:self.table.cellWidget(n,3).click());row.addWidget(action)
+                    details=QPushButton('Подробнее');details.setToolTip('Выбрать документ: сведения, получение, повторное использование и история.')
+                    details.clicked.connect(lambda checked=False,n=number:self.table.selectRow(n));row.addWidget(details)
+                elif self.assessment and entry.title=='Договор на обучение':
+                    action=QPushButton('Распечатать договор');action.setEnabled(not self.assessment.historical)
+                    action.clicked.connect(self.create_contract);row.addWidget(action)
+                group_layout.addWidget(widget)
+            if not rows:group_layout.addWidget(QLabel('По настроенным правилам отдельных документов не предусмотрено.'))
+
     def refresh(self):
+        self.checklist=None
         self.assessment=None;self.items.clear();self.table.setRowCount(0);self.problems.clear()
         try:
             key=self.training.currentData()
@@ -296,6 +377,7 @@ class AdmissionPage(QWidget):
                 student=self.repository.students.load(training.student_id)
                 direction=program['direction'];kind=KINDS.get(direction,{}).get(program['kind'],program['kind'])
                 self.summary.setText(f"{student.full_name}\n{program['full_name']}\n{'ДПО' if direction=='dpo' else 'ПО'} · {kind} · {program['hours']} ч.\n{training.start_date} — {training.end_date}")
+                self.kind.blockSignals(True);self.kind.setCurrentIndex(self.kind.findData(program['kind']));self.kind.blockSignals(False)
                 labels={'required':'Отсутствует','absent':'Отсутствует','prepared':'Подготовлен','received':'Получен','verified':'Проверен','not_required':'Не требуется'}
                 fill_table(self.table,[(i.key,i.title,('Обязательно · ' if i.required else 'Не блокирует · ')+SOURCES[i.source],labels[i.status],'') for i in self.assessment.items])
                 rules={r.rule_key:r for r in self.repository.applicable(key)} if not self.assessment.historical else {}
@@ -309,17 +391,40 @@ class AdmissionPage(QWidget):
                     button.clicked.connect(lambda checked=False,row=row,form=form:self.row_action(row,form))
                     self.table.setCellWidget(row,3,button)
                 self.table.resizeRowsToContents()
-                text='Историческая комплектность на момент зачисления; изменения запрещены.' if self.assessment.historical else 'Готов к зачислению' if self.assessment.ready else 'Не готов к зачислению'
+                text='Историческая комплектность на момент зачисления; изменения запрещены.' if self.assessment.historical else 'Можно зачислять' if self.assessment.ready else 'Не хватает документов или не выполнены условия допуска'
                 if self.assessment.historical and not self.assessment.items:text='Прежнее зачисление: комплектность до P03.5 не фиксировалась.'
+                self.checklist=checklist(self.repository,program,training.program_id,self.assessment)
                 self.state.setText(text);self.problems.setPlainText('\n'.join(self.assessment.problems))
+            elif self.repository:
+                program_id=self.program.currentData()
+                if program_id is not None:
+                    program=asdict(ProgramRepository(self.repository.connection).load(program_id))
+                    self.kind.blockSignals(True);self.kind.setCurrentIndex(self.kind.findData(program['kind']));self.kind.blockSignals(False)
+                else:
+                    kind=self.kind.currentData();program={'direction':'dpo' if kind in KINDS['dpo'] else 'po','kind':kind}
+                self.checklist=checklist(self.repository,program,program_id)
+                self.summary.setText(self.checklist.title+'\n'+self.checklist.subtitle)
+                self.state.setText(self.checklist.notice)
             else:self.state.clear();self.summary.clear()
         except ERRORS as error:self.state.setText(str(error))
         self.empty.setVisible(self.assessment is None)
-        self.empty_space.setVisible(self.assessment is None)
-        self.work_scroll.setVisible(self.assessment is not None)
+        self.empty_space.hide()
+        self.work_scroll.setVisible(self.checklist is not None)
+        self.print_button.setEnabled(self.checklist is not None)
+        self.preview_button.setVisible(self.assessment is not None)
+        self.preview_selectors.setVisible(self.assessment is None)
+        self.kind.setEnabled(self.assessment is None);self.program.setEnabled(self.assessment is None)
+        self.render_groups()
         self.choose_button.setEnabled(bool(self.repository))
         self.new_button.setEnabled(bool(self.repository))
         self.selection_changed()
+        for widget in (self.context_button,self.check_button,self.problems,self.action_hint,self.record_button,self.form_button,self.reuse_button,self.copy_button,self.revoke_button,self.history_button,self.order_button):
+            widget.setVisible(self.assessment is not None)
+
+    def create_contract(self):
+        if self.assessment and not self.assessment.historical:
+            training=self.repository.trainings.load(self.assessment.training_id)
+            self.contract_requested.emit([training.id],training.group_id)
 
     def row_action(self,row,form):
         self.table.selectRow(row)
@@ -339,13 +444,13 @@ class AdmissionPage(QWidget):
         if item:details.extend([SOURCES[item.source]+': '+item.reference,item.reason])
         if doc:
             event=self.repository.document_event(doc['id'])
-            details.extend([f"Документ ID {doc['id']} · дата {doc['document_date']} · действует до {doc['valid_until'] or 'не указано'}",
+            details.extend([f"Документ · дата {doc['document_date']} · действует до {doc['valid_until'] or 'не указано'}",
                 'Область действия: '+doc['scope'],f"Последнее событие: {STATES.get(event['state'],'Отозвано')} · {event['day']} · {event['responsible']}",
                 'Подписание: '+('подтверждено' if event['signed'] else 'не подтверждено'),
                 'Вложение: '+(doc['file_path'] or 'не сохранялось')])
             if doc['template_id']:
                 template=self.repository.templates.load(doc['template_id'])
-                details.append(f"Шаблон: {template.name}, версия {template.version}, SHA-256 {doc['template_sha256']}")
+                details.append(f"Шаблон: {template.name}")
         self.problems.setPlainText('\n'.join(details))
         is_consent=bool(item and item.document_id and self.repository.document(item.document_id)['document_type']=='consent')
         self.revoke_button.setEnabled(bool(is_consent and self.repository.document_event(item.document_id)['state']!='revoked'))
@@ -389,7 +494,7 @@ class AdmissionPage(QWidget):
             if not docs:raise ValueError('Нет действующих проверенных подтверждений той же области действия. Сначала учтите документ.')
             dialog=QDialog(self);dialog.setWindowTitle('Выберите действующее подтверждение');layout=QVBoxLayout(dialog);form=QFormLayout()
             select=QComboBox()
-            for d in docs:select.addItem(f'ID {d["id"]} · {d["title"]} · {d["document_date"]} · до {d["valid_until"] or "без указанного срока"}',d['id'])
+            for d in docs:select.addItem(f'{d["title"]} · {d["document_date"]} · до {d["valid_until"] or "без указанного срока"}',d['id'])
             form.addRow('Подтверждение',select);who=line(form,'Ответственное лицо *');layout.addLayout(form)
             buttons(dialog,layout,dialog.accept)
             if dialog.exec()==QDialog.DialogCode.Accepted:
@@ -429,7 +534,7 @@ class AdmissionPage(QWidget):
             self.enrollment_requested.emit([self.assessment.training_id],self.repository.trainings.load(self.assessment.training_id).group_id)
 
     def showEvent(self,event):
-        super().showEvent(event);self.reload_trainings()
+        super().showEvent(event);self.reload_programs();self.reload_trainings()
 
 
 class AdmissionRulesPage(QWidget):

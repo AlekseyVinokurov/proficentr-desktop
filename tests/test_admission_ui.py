@@ -1,7 +1,7 @@
 from datetime import date
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication,QDialog,QMessageBox,QFileDialog
+from PySide6.QtWidgets import QApplication,QDialog,QMessageBox,QFileDialog,QLabel
 import pytest
 
 from test_contracts import records
@@ -30,7 +30,7 @@ def select(page,key):
 def test_initial_group_training_and_edit_basis_recheck(screen,monkeypatch):
     r,page=screen
     assert page.training.currentData()==r.key
-    assert 'Не готов' in page.state.text()
+    assert 'Не хватает документов' in page.state.text()
     assert 'правовое основание' in page.problems.toPlainText()
     import proficentr.ui.admission_page as module
     def edit(dialog):
@@ -46,7 +46,7 @@ def test_initial_group_training_and_edit_basis_recheck(screen,monkeypatch):
     assert not page.order_button.isEnabled()
     ready_for_admission(r.db.connection,r.storage,[r.key])
     page.refresh()
-    assert page.order_button.isEnabled() and 'Готов' in page.state.text()
+    assert page.order_button.isEnabled() and 'Можно зачислять' in page.state.text()
     requested=[];page.enrollment_requested.connect(lambda ids,group:requested.append((ids,group)))
     page.order_button.click();assert requested==[([r.key],r.group.id)]
 
@@ -140,8 +140,8 @@ def test_empty_screen_and_explicit_selection(admission,monkeypatch):
     r=admission;app=QApplication.instance() or QApplication([])
     page=AdmissionPage(r.admission);page.show();app.processEvents()
     assert page.assessment is None and page.training.currentIndex()==-1
-    assert 'выберите существующее обучение' in page.empty.text()
-    assert not page.work_scroll.isVisible() and not page.table.isVisible()
+    assert 'Выберите вид обучения или программу' in page.empty.text()
+    assert page.work_scroll.isVisible() and page.checklist and page.print_button.isEnabled()
     assert page.choose_button.isEnabled() and page.new_button.isEnabled()
     monkeypatch.setattr(QDialog,'exec',lambda self:QDialog.DialogCode.Rejected)
     page.choose_button.click()
@@ -212,3 +212,152 @@ def test_rules_editor_moved_and_versions_preserved(admission,monkeypatch):
     assert after.version==before.version+1
     assert r.db.connection.execute('SELECT COUNT(*) FROM admission_rules WHERE rule_key=?',(before.rule_key,)).fetchone()[0]==2
     page.close()
+
+
+@pytest.mark.parametrize('kind,expected',[
+    ('dpo_upskilling','dpo_education'),('dpo_retraining','dpo_education'),
+    ('po_initial_training','po_approved'),('po_retraining','po_profession_retraining'),
+    ('po_upskilling','po_profession_upskilling')])
+def test_preview_all_five_kinds_without_creating_records(admission,kind,expected):
+    r=admission;app=QApplication.instance() or QApplication([])
+    before=r.db.connection.total_changes
+    page=AdmissionPage(r.admission);page.show();app.processEvents()
+    assert page.kind.count()==5
+    page.kind.setCurrentIndex(page.kind.findData(kind))
+    assert page.assessment is None and page.training.currentIndex()==-1
+    assert expected in {row.key for group in page.checklist.groups for row in group}
+    assert 'Предварительный' in page.checklist.notice and 'не учтены' in page.checklist.notice
+    assert page.work_scroll.isVisible() and page.print_button.isEnabled()
+    assert len(page.group_layouts)==3
+    assert r.db.connection.total_changes==before
+    page.close()
+
+
+def test_preview_program_uses_kind_hours_and_conditional_special_rules(admission):
+    from dataclasses import replace
+    from proficentr.admission import AdmissionRule
+    from proficentr.program_repository import ProgramRepository
+    r=admission;app=QApplication.instance() or QApplication([])
+    program=ProgramRepository(r.db.connection).save(replace(r.program,id=None,full_name='Вымышленная переподготовка',kind='dpo_retraining',hours=249))
+    r.admission.save_rule(AdmissionRule('medical_test','Вымышленная медицинская справка',program_id=program.id,
+        condition_tag='internal_medical',source='special',reference='Вымышленное требование программы'),responsible='Тестов',day=TODAY)
+    page=AdmissionPage(r.admission)
+    assert 'medical_test' not in {row.key for group in page.checklist.groups for row in group}
+    before=r.db.connection.total_changes
+    page.program.setCurrentIndex(page.program.findData(program.id))
+    assert page.kind.currentData()=='dpo_retraining'
+    assert program.full_name in page.summary.text() and '249 ч.' in page.summary.text()
+    rows=[row for group in page.checklist.groups for row in group]
+    special=next(row for row in rows if row.key=='medical_test')
+    assert 'Требование программы' in special.detail and 'При применимости' in special.detail
+    assert 'internal_medical' not in special.detail
+    assert any('минимум 250' in row.title for row in rows)
+    assert r.db.connection.total_changes==before
+    page.kind.setCurrentIndex(page.kind.findData('po_initial_training'))
+    assert page.program.currentData() is None
+    assert not any('минимум' in row.title for group in page.checklist.groups for row in group)
+    page.close()
+
+
+def test_print_preview_memo_a4_without_records(admission,monkeypatch,tmp_path):
+    import proficentr.ui.admission_page as module
+    from PySide6.QtGui import QPageSize,QTextDocument
+    from PySide6.QtPrintSupport import QPrinter
+    from proficentr.admission_checklist import memo_html,GROUPS
+    r=admission;app=QApplication.instance() or QApplication([]);page=AdmissionPage(r.admission)
+    page.program.setCurrentIndex(page.program.findData(r.program.id))
+    before=r.db.connection.total_changes
+    output=tmp_path/'memo.pdf';printers=[]
+    def print_dialog(printer,parent):
+        printers.append(printer)
+        assert printer.pageLayout().pageSize().id()==QPageSize.PageSizeId.A4
+        printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat);printer.setOutputFileName(str(output))
+        class Dialog:
+            def setWindowTitle(self,title):pass
+            def exec(self):return QDialog.DialogCode.Accepted
+        return Dialog()
+    monkeypatch.setattr(module,'QPrintDialog',print_dialog)
+    page.print_button.click()
+    assert len(printers)==1 and output.read_bytes().startswith(b'%PDF-')
+    text=QTextDocument();text.setHtml(memo_html(page.checklist));plain=text.toPlainText()
+    assert r.program.full_name in plain and str(r.program.hours)+' ч.' in plain
+    assert all(group in plain for group in GROUPS) and '☐' in plain and 'Ответственный' in plain
+    assert r.db.connection.total_changes==before
+    page.close()
+
+
+def test_memo_escapes_program_and_rule_text(admission):
+    from dataclasses import asdict,replace
+    from proficentr.admission_checklist import checklist,memo_html
+    value=checklist(admission.admission,asdict(replace(admission.program,full_name='<img src="secret">')),admission.program.id)
+    html=memo_html(value)
+    assert '<img' not in html and '&lt;img' in html
+
+
+def test_consent_is_conditional_and_generated_only_when_applicable(screen,monkeypatch):
+    r,page=screen
+    assert 'если применимо' in ' '.join(row.title for row in page.checklist.groups[1])
+    context(r);page.refresh()
+    consent=next(row for row in page.checklist.groups[1] if row.key=='pd_consent')
+    assert 'Не требуется' in consent.detail
+    context(r,basis='consent');page.refresh();select(page,'pd_consent')
+    dialog=AdmissionFormDialog(r.admission,r.key,page.items['pd_consent'])
+    assert not dialog.save_button.isEnabled()
+    assert 'Согласие' in ' '.join(label.text() for label in dialog.findChildren(QLabel))
+    dialog.close()
+    form(r,'pd_consent','consent');page.refresh()
+    assert page.items['pd_consent'].status=='prepared' and not page.assessment.ready
+    assert not page.order_button.isEnabled()
+
+
+def test_contract_action_reuses_existing_workflow(screen,monkeypatch):
+    r,page=screen;app=QApplication.instance()
+    window=MainWindow(r.db.path,r.storage,r.db)
+    calls=[]
+    monkeypatch.setattr(window.contracts_page,'open_card',lambda **kwargs:calls.append(kwargs))
+    window._open_admission(r.key)
+    from PySide6.QtWidgets import QPushButton
+    button=next(button for button in window.admission_page.workspace.findChildren(QPushButton) if button.text()=='Распечатать договор')
+    button.click()
+    assert calls==[dict(training_ids=[r.key],group_id=r.group.id)]
+    assert window.documents_page.currentWidget() is window.contracts_page
+    window.close()
+
+
+def test_preview_new_training_keeps_selected_program(admission,monkeypatch):
+    r=admission;app=QApplication.instance() or QApplication([]);page=AdmissionPage(r.admission)
+    page.program.setCurrentIndex(page.program.findData(r.program.id))
+    def cancel(dialog):
+        assert dialog.program.currentData()==r.program.id
+        return QDialog.DialogCode.Rejected
+    monkeypatch.setattr(TrainingDialog,'exec',cancel)
+    before=r.db.connection.total_changes;page.new_button.click()
+    assert r.db.connection.total_changes==before and page.assessment is None
+    page.close()
+
+
+def test_historical_checklist_uses_original_rule_versions(screen):
+    from dataclasses import replace
+    from proficentr.admission_checklist import checklist
+    import json
+    r,page=screen
+    frozen=replace(r.admission.review(r.key),historical=True)
+    program=json.loads(r.trainings.load(r.key).program_snapshot)
+    before=checklist(r.admission,program,r.program.id,frozen)
+    old=next(rule for rule in r.admission.rules() if rule.rule_key=='application')
+    r.admission.save_rule(replace(old,document_type='condition',title='Новая редакция'),
+        responsible='Тестов',day=TODAY,expected_version=old.version)
+    assert checklist(r.admission,program,r.program.id,frozen)==before
+    assert any(row.key=='application' for row in before.groups[1])
+
+
+def test_contract_missing_template_names_form_and_uses_connected_template(screen):
+    from proficentr.ui.contracts_page import ContractDialog
+    r,page=screen
+    dialog=ContractDialog(r.repo,training_ids=[r.key])
+    assert dialog.customer_student.currentData()==r.first.id
+    assert 'Договор с физическим лицом' in dialog.template_hint.text()
+    assert 'Настройки → Шаблоны документов' in dialog.template_hint.text()
+    template=r.template();dialog.refresh_templates()
+    assert dialog.template.currentData()==template.id and not dialog.template_hint.text()
+    dialog.close()

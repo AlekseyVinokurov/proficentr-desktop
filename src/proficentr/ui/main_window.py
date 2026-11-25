@@ -126,6 +126,7 @@ class MainWindow(QMainWindow):
         self.groups_page.admission_requested.connect(self._open_admission)
         self.admission_page.templates_requested.connect(self._open_templates)
         self.admission_page.enrollment_requested.connect(self._create_order)
+        self.admission_page.contract_requested.connect(self._create_contract)
         self.groups_page.contract_requested.connect(self._create_contract)
         self.groups_page.order_requested.connect(self._create_order)
         self.groups_page.attestation_requested.connect(self._create_attestation)
