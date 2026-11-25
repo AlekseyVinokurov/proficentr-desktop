@@ -596,6 +596,45 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = (
         """INSERT INTO admission_rules VALUES ('po_approved','Проверена утверждённая программа, её продолжительность и специальные требования','po',NULL,'','law','273-ФЗ, часть 8 статьи 73; применяется историческая редакция программы',1,'condition',0,0,'approved_program','admission',0,1,1,NULL)""",
     ),
 
+    # N02: independent registry; existing templates and student documents are unchanged.
+    (
+        "CREATE TABLE regulatory_documents (id INTEGER PRIMARY KEY,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+        """CREATE TABLE regulatory_versions (
+            id INTEGER PRIMARY KEY,document_id INTEGER NOT NULL REFERENCES regulatory_documents(id),
+            revision INTEGER NOT NULL CHECK(revision>0),title TEXT NOT NULL CHECK(length(trim(title))>0),
+            category TEXT NOT NULL CHECK(category IN ('charter','license','local','pedagogical','staff','founder','orders','privacy','other')),
+            number TEXT NOT NULL DEFAULT '',document_date TEXT NOT NULL DEFAULT '',effective_date TEXT NOT NULL DEFAULT '',
+            approval_basis TEXT NOT NULL DEFAULT '',edition TEXT NOT NULL DEFAULT '',note TEXT NOT NULL DEFAULT '',
+            pdf_path TEXT NOT NULL DEFAULT '',pdf_sha256 TEXT NOT NULL DEFAULT '',
+            docx_path TEXT NOT NULL DEFAULT '',docx_sha256 TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(document_id,revision),
+            CHECK((pdf_path='' AND pdf_sha256='') OR (pdf_path<>'' AND length(pdf_sha256)=64)),
+            CHECK((docx_path='' AND docx_sha256='') OR (docx_path<>'' AND length(docx_sha256)=64)))""",
+        """CREATE TABLE regulatory_status_events (id INTEGER PRIMARY KEY,
+            version_id INTEGER NOT NULL REFERENCES regulatory_versions(id),
+            status TEXT NOT NULL CHECK(status IN ('draft','active','archived')),
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),note TEXT NOT NULL)""",
+        """CREATE TABLE regulatory_links (version_id INTEGER NOT NULL REFERENCES regulatory_versions(id),
+            target_version_id INTEGER NOT NULL REFERENCES regulatory_versions(id),
+            PRIMARY KEY(version_id,target_version_id),CHECK(version_id<>target_version_id))""",
+        "CREATE INDEX regulatory_latest_status ON regulatory_status_events(version_id,id)",
+        *(f"CREATE TRIGGER {table}_no_{action.lower()} BEFORE {action} ON {table} BEGIN SELECT RAISE(ABORT,'Regulatory history is immutable'); END"  # nosec B608 # Fixed internal table/action names.
+          for table in ('regulatory_documents','regulatory_versions','regulatory_status_events','regulatory_links')
+          for action in ('UPDATE','DELETE')),
+        """CREATE TRIGGER regulatory_documents_no_replace BEFORE INSERT ON regulatory_documents
+            WHEN EXISTS (SELECT 1 FROM regulatory_documents WHERE id=NEW.id)
+            BEGIN SELECT RAISE(ABORT,'Regulatory history is immutable'); END""",
+        """CREATE TRIGGER regulatory_versions_no_replace BEFORE INSERT ON regulatory_versions
+            WHEN EXISTS (SELECT 1 FROM regulatory_versions WHERE id=NEW.id OR (document_id=NEW.document_id AND revision=NEW.revision))
+            BEGIN SELECT RAISE(ABORT,'Regulatory history is immutable'); END""",
+        """CREATE TRIGGER regulatory_events_no_replace BEFORE INSERT ON regulatory_status_events
+            WHEN EXISTS (SELECT 1 FROM regulatory_status_events WHERE id=NEW.id)
+            BEGIN SELECT RAISE(ABORT,'Regulatory history is immutable'); END""",
+        """CREATE TRIGGER regulatory_links_no_replace BEFORE INSERT ON regulatory_links
+            WHEN EXISTS (SELECT 1 FROM regulatory_links WHERE version_id=NEW.version_id AND target_version_id=NEW.target_version_id)
+            BEGIN SELECT RAISE(ABORT,'Regulatory history is immutable'); END""",
+    ),
+
 )
 
 
